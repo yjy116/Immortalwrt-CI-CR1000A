@@ -19,7 +19,7 @@ jobs:
       - name: Check upstream updates (last 24h)
         id: check
         env:
-          # 🔧 修改成 AXT1800.yml 中的 SOURCE 和 BRANCH
+          # 🔧 修改成 CR1000A.yml 中的 SOURCE 和 BRANCH
           SOURCE: VIKINGYFY/immortalwrt
           BRANCH: main
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -59,21 +59,21 @@ jobs:
           delete_workflows: true
           workflows_keep_day: 0
 
-  # 第三步：如果有更新，再触发 AXT1800.yml 执行正式编译
+  # 第三步：如果有更新，再触发 CR1000A.yml 执行正式编译
   trigger_build:
     needs: clean
     if: needs.check_updates.outputs.should_build == 'true'
     runs-on: ubuntu-latest
     steps:
-      - name: Dispatch AXT1800 workflow
+      - name: Dispatch CR1000A workflow
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          echo "Triggering AXT1800 workflow_dispatch..."
+          echo "Triggering CR1000A workflow_dispatch..."
 
           curl -s -X POST \
             -H "Authorization: Bearer ${GITHUB_TOKEN}" \
             -H "Accept: application/vnd.github+json" \
-            https://api.github.com/repos/${{ github.repository }}/actions/workflows/AXT1800.yml/dispatches \
+            https://api.github.com/repos/${{ github.repository }}/actions/workflows/CR1000A.yml/dispatches \
             -d '{"ref":"main","inputs":{"PACKAGE":"","TEST":"false"}}'
 
