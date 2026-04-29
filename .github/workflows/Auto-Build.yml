@@ -1,0 +1,79 @@
+name: Auto-Build
+
+on:
+  # 每天 00:00（新加坡/北京时间，UTC+8）自动执行
+  schedule:
+    - cron: "0 16 * * *"
+  # 仍支持手动触发
+  workflow_dispatch:
+
+permissions: write-all
+
+jobs:
+  # 第一步：检查上游源码是否有更新
+  check_updates:
+    runs-on: ubuntu-latest
+    outputs:
+      should_build: ${{ steps.check.outputs.should_build }}
+    steps:
+      - name: Check upstream updates (last 24h)
+        id: check
+        env:
+          # 🔧 修改成 AXT1800.yml 中的 SOURCE 和 BRANCH
+          SOURCE: VIKINGYFY/immortalwrt
+          BRANCH: main
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "Checking commits for $SOURCE on branch $BRANCH in the last 24 hours..."
+
+          # 计算 24 小时前的 UTC 时间
+          since=$(date -u -d '24 hours ago' +'%Y-%m-%dT%H:%M:%SZ')
+          echo "Since: $since"
+
+          # 查询上游仓库过去 24 小时是否有提交
+          resp=$(curl -s -H "Authorization: Bearer $GITHUB_TOKEN" \
+            "https://api.github.com/repos/$SOURCE/commits?sha=$BRANCH&since=$since")
+
+          # 如果返回里包含 "sha" 字段，就表示有提交
+          if echo "$resp" | grep -q '"sha"'; then
+            echo "Found new commits. Will build."
+            echo "should_build=true" >> $GITHUB_OUTPUT
+          else
+            echo "No new commits in the last 24 hours. Skip build."
+            echo "should_build=false" >> $GITHUB_OUTPUT
+          fi
+
+  # 第二步：如果有更新，先清理旧 Release/Workflow（保留 2 个最新的）
+  clean:
+    needs: check_updates
+    if: needs.check_updates.outputs.should_build == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Delete old Releases and Workflows
+        uses: ophub/delete-releases-workflows@main
+        with:
+          gh_token: ${{ secrets.GITHUB_TOKEN }}
+          delete_releases: true
+          releases_keep_latest: 2   # ⭐ 只保留最新 2 个 Release
+          delete_tags: true
+          delete_workflows: true
+          workflows_keep_day: 0
+
+  # 第三步：如果有更新，再触发 AXT1800.yml 执行正式编译
+  trigger_build:
+    needs: clean
+    if: needs.check_updates.outputs.should_build == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Dispatch AXT1800 workflow
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "Triggering AXT1800 workflow_dispatch..."
+
+          curl -s -X POST \
+            -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            https://api.github.com/repos/${{ github.repository }}/actions/workflows/AXT1800.yml/dispatches \
+            -d '{"ref":"main","inputs":{"PACKAGE":"","TEST":"false"}}'
+
