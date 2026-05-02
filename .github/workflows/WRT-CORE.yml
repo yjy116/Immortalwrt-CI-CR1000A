@@ -196,9 +196,47 @@ jobs:
           # 查找所有 ubus 的 Makefile 并移除 -Werror
           find package/ -name Makefile -path "*/ubus/*" -exec sed -i 's/-Werror/-Wno-error=format-nonliteral/g' {} +
 
-          make -j$(nproc) || make -j1 V=s
+          MIN_VERBOSE_RETRY_FREE_MB=4096
+
+          report_disk_usage() {
+            echo "======================="
+            df -h
+            echo "======================="
+            du -h --max-depth=1
+            echo "======================="
+          }
+
+          set +e
+          make -j"$(nproc)"
+          build_status=$?
+          set -e
+
+          if [ "$build_status" -eq 0 ]; then
+            exit 0
+          fi
+
+          echo "::error::Parallel firmware build failed with exit code ${build_status}."
+          echo "Disk usage before verbose retry:"
+          report_disk_usage
+
+          available_space_mb="$(df -Pm . | awk 'NR == 2 { print $4 }')"
+          echo "Available workspace space before verbose retry: ${available_space_mb} MB"
+
+          if ! [[ "$available_space_mb" =~ ^[0-9]+$ ]]; then
+            echo "::error::Unable to read free disk space for verbose retry. Original build failure is preserved."
+            exit "$build_status"
+          fi
+
+          if [ "$available_space_mb" -lt "$MIN_VERBOSE_RETRY_FREE_MB" ]; then
+            echo "::error::Skipping verbose retry because less than ${MIN_VERBOSE_RETRY_FREE_MB} MB is free. Original build failure is preserved."
+            exit "$build_status"
+          fi
+
+          echo "::warning::Retrying with single-thread verbose build to expose the failing target."
+          make -j1 V=s
 
       - name: Machine Information
+        if: always()
         run: |
           cd ./wrt/
 
