@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: MIT
+# Copyright (C) 2026 VIKINGYFY
+
 #云编译公用核心
 name: WRT-CORE
 
@@ -42,7 +45,7 @@ on:
         type: string
 
 env:
-  GITHUB_TOKEN: ${{secrets.PAT}}
+  GITHUB_TOKEN: ${{secrets.GITHUB_TOKEN}}
   WRT_CONFIG: ${{inputs.WRT_CONFIG}}
   WRT_THEME: ${{inputs.WRT_THEME}}
   WRT_NAME: ${{inputs.WRT_NAME}}
@@ -68,44 +71,13 @@ jobs:
         env:
           DEBIAN_FRONTEND: noninteractive
         run: |
-          echo "Disk usage before runner cleanup:"
-          df -h
-
-          sudo rm -rf \
-            /opt/az \
-            /opt/ghc \
-            /opt/google \
-            /opt/hostedtoolcache \
-            /opt/microsoft \
-            /opt/pipx \
-            /usr/share/dotnet \
-            /usr/share/swift \
-            /usr/local/.ghcup \
-            /usr/local/julia* \
-            /usr/local/lib/android \
-            /usr/local/lib/node_modules \
-            /usr/local/share/boost \
-            /usr/local/share/chromium \
-            /usr/local/share/edge_driver \
-            /usr/local/share/gecko_driver \
-            /usr/local/share/powershell \
-            /usr/local/share/vcpkg
-
-          if command -v docker >/dev/null 2>&1; then
-            sudo docker system prune -af --volumes
-          fi
-
-          if swapon --show=NAME --noheadings | grep -qx "/mnt/swapfile"; then
-            sudo swapoff /mnt/swapfile
-            sudo rm -f /mnt/swapfile
-          fi
-
           sudo -E apt -yqq purge firefox
           sudo -E apt -yqq update
+          sudo -E apt -yqq full-upgrade
           sudo -E apt -yqq autoremove --purge
           sudo -E apt -yqq autoclean
           sudo -E apt -yqq clean
-          sudo -E apt -yqq install dos2unix python3-netifaces libfuse-dev
+          sudo -E apt -yqq install dos2unix libfuse-dev
           sudo bash -c 'bash <(curl -sL https://build-scripts.immortalwrt.org/init_build_environment.sh)'
           sudo -E systemctl daemon-reload
           sudo -E timedatectl set-timezone "Asia/Shanghai"
@@ -114,15 +86,13 @@ jobs:
           sudo chown $USER:$USER /mnt/build_wrt
           sudo ln -s /mnt/build_wrt $GITHUB_WORKSPACE/wrt
 
-          echo "Disk usage after runner cleanup:"
-          df -h
-
       - name: Initialization Values
         run: |
           echo "WRT_DATE=$(TZ=UTC-8 date +"%y.%m.%d-%H.%M.%S")" >> $GITHUB_ENV
           echo "WRT_MARK=${GITHUB_REPOSITORY%%/*}" >> $GITHUB_ENV
           echo "WRT_INFO=${WRT_SOURCE%%/*}" >> $GITHUB_ENV
           echo "WRT_TARGET=$(grep -m 1 -oP '^CONFIG_TARGET_\K[\w]+(?=\=y)' ./Config/$WRT_CONFIG.txt)" >> $GITHUB_ENV
+          echo "WRT_WIFI=wifi-yes" >> $GITHUB_ENV
           echo "WRT_KVER=none" >> $GITHUB_ENV
           echo "WRT_LIST=none" >> $GITHUB_ENV
 
@@ -224,51 +194,9 @@ jobs:
         run: |
           cd ./wrt/
 
-          # 【新增修复逻辑】防止 ubus 在 GCC 14 下报错
-          # 查找所有 ubus 的 Makefile 并移除 -Werror
-          find package/ -name Makefile -path "*/ubus/*" -exec sed -i 's/-Werror/-Wno-error=format-nonliteral/g' {} +
-
-          MIN_VERBOSE_RETRY_FREE_MB=4096
-
-          report_disk_usage() {
-            echo "======================="
-            df -h
-            echo "======================="
-            du -h --max-depth=1
-            echo "======================="
-          }
-
-          set +e
-          make -j"$(nproc)"
-          build_status=$?
-          set -e
-
-          if [ "$build_status" -eq 0 ]; then
-            exit 0
-          fi
-
-          echo "::error::Parallel firmware build failed with exit code ${build_status}."
-          echo "Disk usage before verbose retry:"
-          report_disk_usage
-
-          available_space_mb="$(df -Pm . | awk 'NR == 2 { print $4 }')"
-          echo "Available workspace space before verbose retry: ${available_space_mb} MB"
-
-          if ! [[ "$available_space_mb" =~ ^[0-9]+$ ]]; then
-            echo "::error::Unable to read free disk space for verbose retry. Original build failure is preserved."
-            exit "$build_status"
-          fi
-
-          if [ "$available_space_mb" -lt "$MIN_VERBOSE_RETRY_FREE_MB" ]; then
-            echo "::error::Skipping verbose retry because less than ${MIN_VERBOSE_RETRY_FREE_MB} MB is free. Original build failure is preserved."
-            exit "$build_status"
-          fi
-
-          echo "::warning::Retrying with single-thread verbose build to expose the failing target."
-          make -j1 V=s
+          make -j$(nproc) || make -j1 V=s
 
       - name: Machine Information
-        if: always()
         run: |
           cd ./wrt/
 
@@ -295,7 +223,7 @@ jobs:
             for FILE in $(find ./bin/targets/ -type f -iname "*$WRT_TARGET*") ; do
               EXT=$(basename $FILE | cut -d '.' -f 2-)
               NAME=$(basename $FILE | cut -d '.' -f 1 | grep -io "\($WRT_TARGET\).*")
-              NEW_FILE="$WRT_INFO"-"$WRT_BRANCH"-"$NAME"-"$WRT_DATE"."$EXT"
+              NEW_FILE="$NAME"-"$WRT_INFO"-"$WRT_BRANCH"-"$WRT_WIFI"-"$WRT_DATE"."$EXT"
               mv -f $FILE ./upload/$NEW_FILE
             done
 
