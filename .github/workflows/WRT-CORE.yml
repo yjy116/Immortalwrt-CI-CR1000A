@@ -68,8 +68,38 @@ jobs:
         env:
           DEBIAN_FRONTEND: noninteractive
         run: |
-          # 清理磁盘空间（这一步非常关键）
-          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/share/boost
+          echo "Disk usage before runner cleanup:"
+          df -h
+
+          sudo rm -rf \
+            /opt/az \
+            /opt/ghc \
+            /opt/google \
+            /opt/hostedtoolcache \
+            /opt/microsoft \
+            /opt/pipx \
+            /usr/share/dotnet \
+            /usr/share/swift \
+            /usr/local/.ghcup \
+            /usr/local/julia* \
+            /usr/local/lib/android \
+            /usr/local/lib/node_modules \
+            /usr/local/share/boost \
+            /usr/local/share/chromium \
+            /usr/local/share/edge_driver \
+            /usr/local/share/gecko_driver \
+            /usr/local/share/powershell \
+            /usr/local/share/vcpkg
+
+          if command -v docker >/dev/null 2>&1; then
+            sudo docker system prune -af --volumes
+          fi
+
+          if swapon --show=NAME --noheadings | grep -qx "/mnt/swapfile"; then
+            sudo swapoff /mnt/swapfile
+            sudo rm -f /mnt/swapfile
+          fi
+
           sudo -E apt -yqq purge firefox
           sudo -E apt -yqq update
           sudo -E apt -yqq autoremove --purge
@@ -83,6 +113,9 @@ jobs:
           sudo mkdir -p /mnt/build_wrt
           sudo chown $USER:$USER /mnt/build_wrt
           sudo ln -s /mnt/build_wrt $GITHUB_WORKSPACE/wrt
+
+          echo "Disk usage after runner cleanup:"
+          df -h
 
       - name: Initialization Values
         run: |
