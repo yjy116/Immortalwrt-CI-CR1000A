@@ -71,9 +71,37 @@ jobs:
         env:
           DEBIAN_FRONTEND: noninteractive
         run: |
+          sudo rm -rf \
+            /opt/az \
+            /opt/ghc \
+            /opt/google \
+            /opt/hostedtoolcache \
+            /opt/microsoft \
+            /opt/pipx \
+            /usr/share/dotnet \
+            /usr/share/swift \
+            /usr/local/.ghcup \
+            /usr/local/julia* \
+            /usr/local/lib/android \
+            /usr/local/lib/node_modules \
+            /usr/local/share/boost \
+            /usr/local/share/chromium \
+            /usr/local/share/edge_driver \
+            /usr/local/share/gecko_driver \
+            /usr/local/share/powershell \
+            /usr/local/share/vcpkg
+
+          if command -v docker >/dev/null 2>&1; then
+            sudo docker system prune -af --volumes
+          fi
+
+          if swapon --show=NAME --noheadings | grep -qx "/mnt/swapfile"; then
+            sudo swapoff /mnt/swapfile
+            sudo rm -f /mnt/swapfile
+          fi
+
           sudo -E apt -yqq purge firefox
           sudo -E apt -yqq update
-          sudo -E apt -yqq full-upgrade
           sudo -E apt -yqq autoremove --purge
           sudo -E apt -yqq autoclean
           sudo -E apt -yqq clean
