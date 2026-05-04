@@ -121,7 +121,35 @@ UPDATE_VERSION() {
 }
 
 #UPDATE_VERSION "软件包名" "测试版，true，可选，默认为否"
-UPDATE_VERSION "sing-box"
+PIN_PACKAGE_VERSION() {
+	local PKG_NAME=$1
+	local TARGET_VERSION=$2
+	local TARGET_HASH=$3
+	local PKG_FILES=$(find ./ ../feeds/packages/ -maxdepth 3 -type f -wholename "*/$PKG_NAME/Makefile")
+
+	if [ -z "$PKG_FILES" ]; then
+		echo "$PKG_NAME not found, cannot pin version!"
+		exit 1
+	fi
+
+	echo -e "\n$PKG_NAME version pin has started!"
+
+	for PKG_FILE in $PKG_FILES; do
+		local OLD_VER=$(grep -Po "PKG_VERSION:=\K.*" "$PKG_FILE")
+		local OLD_HASH=$(grep -Po "PKG_HASH:=\K.*" "$PKG_FILE")
+
+		sed -i "s/PKG_VERSION:=.*/PKG_VERSION:=$TARGET_VERSION/g" "$PKG_FILE"
+		sed -i "s/PKG_HASH:=.*/PKG_HASH:=$TARGET_HASH/g" "$PKG_FILE"
+
+		echo "old version: $OLD_VER $OLD_HASH"
+		echo "pinned version: $TARGET_VERSION $TARGET_HASH"
+		echo "$PKG_FILE version has been pinned!"
+	done
+}
+
+SING_BOX_VERSION="1.12.25"
+SING_BOX_HASH="881435f07b5ab8170ccf3cb69e87130759521dc0ed1ae4bfeacbe7772a93a158"
+PIN_PACKAGE_VERSION "sing-box" "$SING_BOX_VERSION" "$SING_BOX_HASH"
 #UPDATE_VERSION "tailscale"
 
 #引入私有扩展脚本
