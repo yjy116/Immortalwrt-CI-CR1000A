@@ -53,6 +53,16 @@ if [ -d *"luci-app-mini-diskmanager"* ]; then
 	cd $PKG_PATH && echo "mini-diskmanager has been fixed!"
 fi
 
+# Fix luci-app-iperf3 include path when imported as a standalone package
+IPERF3_FILE="./luci-app-iperf3/Makefile"
+if [ -f "$IPERF3_FILE" ]; then
+	echo " "
+
+	sed -i 's#include ../../luci.mk#include $(TOPDIR)/feeds/luci/luci.mk#g' "$IPERF3_FILE"
+
+	cd $PKG_PATH && echo "luci-app-iperf3 has been fixed!"
+fi
+
 # Fix qca-nss-drv start order
 NSS_DRV="../feeds/nss_packages/qca-nss-drv/files/qca-nss-drv.init"
 if [ -f "$NSS_DRV" ]; then
