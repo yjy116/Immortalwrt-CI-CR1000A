@@ -53,16 +53,6 @@ if [ -d *"luci-app-mini-diskmanager"* ]; then
 	cd $PKG_PATH && echo "mini-diskmanager has been fixed!"
 fi
 
-# Fix netspeedtest dependencies missing from the 6.18 package index
-NST_FILE="./netspeedtest/luci-app-netspeedtest/Makefile"
-if [ -f "$NST_FILE" ]; then
-	echo " "
-
-	sed -i 's/ +python3-pkg-resources//g; s/ +python3-email//g' "$NST_FILE"
-
-	cd $PKG_PATH && echo "netspeedtest has been fixed!"
-fi
-
 # Fix qca-nss-drv start order
 NSS_DRV="../feeds/nss_packages/qca-nss-drv/files/qca-nss-drv.init"
 if [ -f "$NSS_DRV" ]; then
