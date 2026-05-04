@@ -124,7 +124,6 @@ UPDATE_VERSION() {
 PIN_PACKAGE_VERSION() {
 	local PKG_NAME=$1
 	local TARGET_VERSION=$2
-	local TARGET_HASH=$3
 	local PKG_FILES=$(find ./ ../feeds/packages/ -maxdepth 3 -type f -wholename "*/$PKG_NAME/Makefile")
 
 	if [ -z "$PKG_FILES" ]; then
@@ -136,7 +135,24 @@ PIN_PACKAGE_VERSION() {
 
 	for PKG_FILE in $PKG_FILES; do
 		local OLD_VER=$(grep -Po "PKG_VERSION:=\K.*" "$PKG_FILE")
+		local OLD_URL=$(grep -Po "PKG_SOURCE_URL:=\K.*" "$PKG_FILE")
 		local OLD_HASH=$(grep -Po "PKG_HASH:=\K.*" "$PKG_FILE")
+		local TARGET_URL=$(echo "$OLD_URL" | sed "s/\$(PKG_VERSION)/$TARGET_VERSION/g; s/\$(PKG_NAME)/$PKG_NAME/g")
+		local TMP_FILE=$(mktemp)
+
+		if ! curl -fL "$TARGET_URL" -o "$TMP_FILE"; then
+			rm -f "$TMP_FILE"
+			echo "$PKG_NAME $TARGET_VERSION source download failed!"
+			exit 1
+		fi
+
+		local TARGET_HASH=$(sha256sum "$TMP_FILE" | cut -d ' ' -f 1)
+		rm -f "$TMP_FILE"
+
+		if [ -z "$TARGET_HASH" ]; then
+			echo "$PKG_NAME $TARGET_VERSION hash calculation failed!"
+			exit 1
+		fi
 
 		sed -i "s/PKG_VERSION:=.*/PKG_VERSION:=$TARGET_VERSION/g" "$PKG_FILE"
 		sed -i "s/PKG_HASH:=.*/PKG_HASH:=$TARGET_HASH/g" "$PKG_FILE"
@@ -147,9 +163,9 @@ PIN_PACKAGE_VERSION() {
 	done
 }
 
+# Only edit this version; PKG_HASH is generated from the selected source tarball.
 SING_BOX_VERSION="1.12.25"
-SING_BOX_HASH="881435f07b5ab8170ccf3cb69e87130759521dc0ed1ae4bfeacbe7772a93a158"
-PIN_PACKAGE_VERSION "sing-box" "$SING_BOX_VERSION" "$SING_BOX_HASH"
+PIN_PACKAGE_VERSION "sing-box" "$SING_BOX_VERSION"
 #UPDATE_VERSION "tailscale"
 
 #引入私有扩展脚本
