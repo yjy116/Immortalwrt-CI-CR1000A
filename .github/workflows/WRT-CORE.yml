@@ -157,8 +157,19 @@ jobs:
             ./wrt/staging_dir/host*
             ./wrt/staging_dir/tool*
 
-      - name: Update Caches
+      - name: Detect Build Cache
+        id: build-cache-state
         if: env.WRT_TEST != 'true'
+        run: |
+          cache_present=0
+          if [ -d "./wrt/staging_dir/host" ] || [ -d "./wrt/staging_dir/hostpkg" ] || compgen -G "./wrt/staging_dir/toolchain-*" >/dev/null; then
+            cache_present=1
+          fi
+
+          echo "cache_present=${cache_present}" >> "$GITHUB_OUTPUT"
+
+      - name: Update Caches
+        if: env.WRT_TEST != 'true' && steps.build-cache-state.outputs.cache_present == '1'
         run: |
           if [ -d "./wrt/staging_dir" ]; then
             find "./wrt/staging_dir" -type d -name "stamp" -not -path "*target*" | while read -r DIR; do
@@ -199,17 +210,6 @@ jobs:
           $GITHUB_WORKSPACE/Scripts/Settings.sh
 
           make defconfig -j$(nproc) && make clean -j$(nproc)
-
-      - name: Detect Build Cache
-        id: build-cache-state
-        if: env.WRT_TEST != 'true'
-        run: |
-          cache_present=0
-          if [ -d "./wrt/staging_dir/host" ] || [ -d "./wrt/staging_dir/hostpkg" ] || compgen -G "./wrt/staging_dir/toolchain-*" >/dev/null; then
-            cache_present=1
-          fi
-
-          echo "cache_present=${cache_present}" >> "$GITHUB_OUTPUT"
 
       - name: Prewarm Build Cache
         if: env.WRT_TEST != 'true' && steps.build-cache-state.outputs.cache_present != '1'
