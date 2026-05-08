@@ -4,9 +4,6 @@
 name: Cache-Clean
 
 on:
-  # Automatic cache cleanup
-  schedule:
-    - cron: 0 20 * * 0
   # Manual cleanup
   workflow_dispatch:
 

@@ -60,8 +60,164 @@ env:
   WRT_TEST: ${{inputs.WRT_TEST}}
 
 jobs:
+  build_cache:
+    name: Build cache / ${{inputs.WRT_SOURCE}}
+    if: ${{ inputs.WRT_TEST != 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Projects
+        uses: actions/checkout@main
+
+      - name: Initialization Environment
+        env:
+          DEBIAN_FRONTEND: noninteractive
+        run: |
+          sudo rm -rf \
+            /opt/az \
+            /opt/ghc \
+            /opt/google \
+            /opt/hostedtoolcache \
+            /opt/microsoft \
+            /opt/pipx \
+            /usr/share/dotnet \
+            /usr/share/swift \
+            /usr/local/.ghcup \
+            /usr/local/julia* \
+            /usr/local/lib/android \
+            /usr/local/lib/node_modules \
+            /usr/local/share/boost \
+            /usr/local/share/chromium \
+            /usr/local/share/edge_driver \
+            /usr/local/share/gecko_driver \
+            /usr/local/share/powershell \
+            /usr/local/share/vcpkg
+
+          if command -v docker >/dev/null 2>&1; then
+            sudo docker system prune -af --volumes
+          fi
+
+          if swapon --show=NAME --noheadings | grep -qx "/mnt/swapfile"; then
+            sudo swapoff /mnt/swapfile
+            sudo rm -f /mnt/swapfile
+          fi
+
+          sudo -E apt -yqq purge firefox
+          sudo -E apt -yqq update
+          sudo -E apt -yqq autoremove --purge
+          sudo -E apt -yqq autoclean
+          sudo -E apt -yqq clean
+          sudo -E apt -yqq install dos2unix libfuse-dev
+          sudo bash -c 'bash <(curl -sL https://build-scripts.immortalwrt.org/init_build_environment.sh)'
+          sudo -E systemctl daemon-reload
+          sudo -E timedatectl set-timezone "Asia/Shanghai"
+
+          sudo mkdir -p /mnt/build_wrt
+          sudo chown $USER:$USER /mnt/build_wrt
+          sudo ln -s /mnt/build_wrt $GITHUB_WORKSPACE/wrt
+
+      - name: Initialization Values
+        run: |
+          echo "WRT_INFO=${WRT_SOURCE%%/*}" >> $GITHUB_ENV
+          echo "WRT_TARGET=$(grep -m 1 -oP '^CONFIG_TARGET_\K[\w]+(?=\=y)' ./Config/$WRT_CONFIG.txt)" >> $GITHUB_ENV
+
+      - name: Clone Code
+        run: |
+          git clone --depth=1 --single-branch --branch $WRT_BRANCH $WRT_REPO ./wrt/
+
+          cd ./wrt/ && echo "WRT_HASH=$(git log -1 --pretty=format:'%h')" >> $GITHUB_ENV
+
+          PROJECT_MIRRORS_FILE="./scripts/projectsmirrors.json"
+          if [ -f "$PROJECT_MIRRORS_FILE" ]; then
+            sed -i '/.cn\//d; /tencent/d; /aliyun/d' "$PROJECT_MIRRORS_FILE"
+          fi
+
+      - name: Check Scripts
+        run: |
+          find ./ -maxdepth 3 -type f -iregex ".*\(txt\|sh\)$" -exec dos2unix {} \; -exec chmod +x {} \;
+
+      - name: Restore Build Cache
+        id: restore-build-cache
+        uses: actions/cache/restore@v4
+        with:
+          key: ${{env.WRT_CONFIG}}-${{env.WRT_INFO}}-${{env.WRT_HASH}}
+          restore-keys: ${{env.WRT_CONFIG}}-${{env.WRT_INFO}}
+          path: |
+            ./wrt/.ccache
+            ./wrt/staging_dir/host*
+            ./wrt/staging_dir/tool*
+
+      - name: Update Feeds
+        if: steps.restore-build-cache.outputs.cache-hit != 'true'
+        run: |
+          cd ./wrt/
+
+          ./scripts/feeds update -a
+          ./scripts/feeds install -a
+
+      - name: Custom Packages
+        if: steps.restore-build-cache.outputs.cache-hit != 'true'
+        run: |
+          cd ./wrt/package/
+
+          $GITHUB_WORKSPACE/Scripts/Packages.sh
+          $GITHUB_WORKSPACE/Scripts/Handles.sh
+
+      - name: Custom Settings
+        if: steps.restore-build-cache.outputs.cache-hit != 'true'
+        run: |
+          cd ./wrt/
+
+          if [[ "${WRT_CONFIG,,}" == *"test"* ]]; then
+            cat $GITHUB_WORKSPACE/Config/$WRT_CONFIG.txt >> .config
+          else
+            cat $GITHUB_WORKSPACE/Config/$WRT_CONFIG.txt $GITHUB_WORKSPACE/Config/GENERAL.txt >> .config
+          fi
+
+          $GITHUB_WORKSPACE/Scripts/Settings.sh
+
+          make defconfig -j$(nproc) && make clean -j$(nproc)
+
+      - name: Download Build Cache Sources
+        if: steps.restore-build-cache.outputs.cache-hit != 'true'
+        run: |
+          cd ./wrt/
+
+          make tools/download toolchain/download -j$(nproc)
+
+      - name: Compile Build Cache
+        if: steps.restore-build-cache.outputs.cache-hit != 'true'
+        run: |
+          cd ./wrt/
+
+          make tools/compile toolchain/compile -j$(nproc)
+
+      - name: Save Build Cache
+        if: steps.restore-build-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          key: ${{env.WRT_CONFIG}}-${{env.WRT_INFO}}-${{env.WRT_HASH}}
+          path: |
+            ./wrt/.ccache
+            ./wrt/staging_dir/host*
+            ./wrt/staging_dir/tool*
+
+      - name: Machine Information
+        if: always()
+        run: |
+          cd ./wrt/
+
+          echo "======================="
+          lscpu | grep -E "name|Core|Thread"
+          echo "======================="
+          df -h
+          echo "======================="
+          du -h --max-depth=1
+          echo "======================="
+
   core:
     name: ${{inputs.WRT_SOURCE}}
+    needs: build_cache
+    if: ${{ always() && !cancelled() && (needs.build_cache.result == 'success' || needs.build_cache.result == 'skipped') }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Projects
@@ -165,15 +321,6 @@ jobs:
             echo "toolchain skiped done!"
           else
             echo "caches missed!"
-          fi
-
-          if ${{steps.check-cache.outputs.cache-hit != 'true'}}; then
-            CACHE_LIST=$(gh cache list --key "$WRT_CONFIG-$WRT_INFO" | cut -f 1)
-            for CACHE_KEY in $CACHE_LIST; do
-              gh cache delete $CACHE_KEY
-            done
-
-            echo "caches cleanup done!"
           fi
 
       - name: Update Feeds
