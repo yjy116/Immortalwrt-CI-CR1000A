@@ -53,7 +53,8 @@ UPDATE_PACKAGE "aurora-config" "eamonxg/luci-app-aurora-config" "master"
 UPDATE_PACKAGE "kucat" "sirpdboy/luci-theme-kucat" "master"
 UPDATE_PACKAGE "kucat-config" "sirpdboy/luci-app-kucat-config" "master"
 
-UPDATE_PACKAGE "homeproxy" "VIKINGYFY/homeproxy" "main"
+# luci-app-homeproxy is provided by the official luci feed.
+# Keep HomeProxy and sing-box aligned with the selected upstream branch.
 UPDATE_PACKAGE "momo" "nikkinikki-org/OpenWrt-momo" "main"
 UPDATE_PACKAGE "nikki" "nikkinikki-org/OpenWrt-nikki" "main"
 UPDATE_PACKAGE "openclash" "vernesong/OpenClash" "dev" "pkg"
@@ -118,7 +119,8 @@ UPDATE_VERSION() {
 	done
 }
 
-UPDATE_VERSION "sing-box"
+# Do not update sing-box independently from HomeProxy.
+# UPDATE_VERSION "sing-box"
 #UPDATE_VERSION "tailscale"
 
 #引入私有扩展脚本
