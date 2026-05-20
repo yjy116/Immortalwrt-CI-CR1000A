@@ -234,10 +234,22 @@ jobs:
           cd ./wrt/
           
           # 用户空间增加emmc解密脚本及rtl9303控制程序
-          git clone https://github.com/yjy116/files
+          git clone --depth=1 https://github.com/yjy116/files
           
           # 赋予 files 目录下所有文件可执行权限
           chmod -R +x files
+
+          for FILE in \
+            files/lib/firmware/ath11k/IPQ8074/hw2.0/board-2.bin \
+            files/lib/firmware/ath11k/QCN9074/hw1.0/amss.bin \
+            files/lib/firmware/ath11k/QCN9074/hw1.0/m3.bin \
+            files/lib/firmware/ath11k/QCN9074/hw1.0/board-2.bin
+          do
+            if [ ! -s "$FILE" ]; then
+              echo "::error::Missing CR1000A wireless firmware file: $FILE"
+              exit 1
+            fi
+          done
           
           make download -j$(nproc)
 
