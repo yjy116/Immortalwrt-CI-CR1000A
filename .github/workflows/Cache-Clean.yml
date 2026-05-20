@@ -4,20 +4,139 @@
 name: Cache-Clean
 
 on:
-  # Manual cleanup
+  # Run every 10 days at 02:30 Beijing time.
+  schedule:
+    - cron: "30 18 */10 * *"
   workflow_dispatch:
+    inputs:
+      CACHE_PREFIX:
+        description: "Only clean cache keys with this prefix"
+        default: "CR1000A-"
+        required: true
+        type: string
+      OLDER_THAN_DAYS:
+        description: "Delete caches created before this many days ago"
+        default: "10"
+        required: true
+        type: string
+      KEEP_LATEST:
+        description: "Keep this many newest caches for each build-cache group"
+        default: "1"
+        required: true
+        type: string
+      DRY_RUN:
+        description: "Preview only; do not delete caches"
+        default: true
+        required: true
+        type: boolean
 
-permissions: write-all
+permissions:
+  actions: write
+  contents: read
 
-env:
-  GITHUB_TOKEN: ${{secrets.GITHUB_TOKEN}}
+concurrency:
+  group: cache-clean
+  cancel-in-progress: false
 
 jobs:
   cleanup:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout Projects
-        uses: actions/checkout@main
+      - name: Safe Cache Clean
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          INPUT_CACHE_PREFIX: ${{ inputs.CACHE_PREFIX }}
+          INPUT_OLDER_THAN_DAYS: ${{ inputs.OLDER_THAN_DAYS }}
+          INPUT_KEEP_LATEST: ${{ inputs.KEEP_LATEST }}
+          INPUT_DRY_RUN: ${{ inputs.DRY_RUN }}
+        run: |
+          set -euo pipefail
 
-      - name: Cache Clean
-        run: gh cache delete --all
+          cache_prefix="${INPUT_CACHE_PREFIX:-CR1000A-}"
+          older_than_days="${INPUT_OLDER_THAN_DAYS:-10}"
+          keep_latest="${INPUT_KEEP_LATEST:-1}"
+          dry_run="${INPUT_DRY_RUN:-false}"
+
+          if [[ ! "$older_than_days" =~ ^[0-9]+$ ]] || [ "$older_than_days" -lt 1 ]; then
+            echo "OLDER_THAN_DAYS must be a positive integer."
+            exit 1
+          fi
+
+          if [[ ! "$keep_latest" =~ ^[0-9]+$ ]]; then
+            echo "KEEP_LATEST must be a non-negative integer."
+            exit 1
+          fi
+
+          cutoff="$(date -u -d "${older_than_days} days ago" +%s)"
+
+          echo "Repository: ${GH_REPO}"
+          echo "Cache prefix: ${cache_prefix}"
+          echo "Delete caches created before: $(date -u -d "@${cutoff}" --iso-8601=seconds)"
+          echo "Keep latest per group: ${keep_latest}"
+          echo "Dry run: ${dry_run}"
+
+          caches="$(gh cache list \
+            --repo "${GH_REPO}" \
+            --key "${cache_prefix}" \
+            --limit 1000 \
+            --sort created_at \
+            --order desc \
+            --json id,key,createdAt,lastAccessedAt,sizeInBytes,ref)"
+
+          if [ "$(jq 'length' <<<"${caches}")" -eq 0 ]; then
+            echo "No caches matched prefix ${cache_prefix}."
+            exit 0
+          fi
+
+          jq -r --argjson cutoff "${cutoff}" --argjson keep "${keep_latest}" '
+            def group_key:
+              if (.key | test("-(full|warm)-")) then
+                (.key | sub("-[0-9a-fA-F]+$"; ""))
+              else
+                (.key | sub("-[0-9a-fA-F]+$"; "") + "-legacy")
+              end;
+
+            group_by(group_key)
+            | map(sort_by(.createdAt) | reverse | to_entries[])
+            | map(
+                .value
+                + {
+                    groupIndex: .key,
+                    groupKey: (.value | group_key),
+                    createdEpoch: (.value.createdAt | fromdateiso8601)
+                  }
+              )
+            | map(select(.groupIndex >= $keep and .createdEpoch < $cutoff))
+            | .[]
+            | [
+                .id,
+                .key,
+                .groupKey,
+                .createdAt,
+                .lastAccessedAt,
+                (.sizeInBytes | tostring),
+                .ref
+              ]
+            | @tsv
+          ' <<<"${caches}" > delete-list.tsv
+
+          if [ ! -s delete-list.tsv ]; then
+            echo "No caches are old enough after preserving the newest entries."
+            exit 0
+          fi
+
+          echo "Caches selected for cleanup:"
+          awk -F '\t' '{
+            printf "- id=%s key=%s group=%s created=%s last_accessed=%s size=%s ref=%s\n", $1, $2, $3, $4, $5, $6, $7
+          }' delete-list.tsv
+
+          if [ "$dry_run" = "true" ]; then
+            echo "DRY_RUN=true, no cache was deleted."
+            exit 0
+          fi
+
+          while IFS=$'\t' read -r cache_id cache_key _rest; do
+            echo "Deleting cache id=${cache_id} key=${cache_key}"
+            gh cache delete "${cache_id}" --repo "${GH_REPO}"
+          done < delete-list.tsv

@@ -41,3 +41,29 @@ workflows——自定义CI配置
 Scripts——自定义脚本
 
 Config——自定义配置
+
+# GitHub Actions Cache 清理说明
+
+GitHub Actions 会自动删除超过 7 天未访问的 cache，但本项目的 OpenWrt 编译缓存体积较大，源码 hash 更新后可能留下多份 `full` / `warm` 构建缓存。缓存接近仓库上限时会出现频繁创建、淘汰、再创建的情况，反而拖慢后续编译。
+
+仓库已提供 `.github/workflows/Cache-Clean.yml`，默认每 10 天运行一次安全清理：
+
+- 只处理 key 以 `CR1000A-` 开头的构建 cache。
+- 按创建时间清理旧 cache，默认只清理创建超过 10 天的条目。
+- 每个构建缓存组默认保留最新 1 个，避免把当前可用缓存全部删光。
+- 不再使用 `gh cache delete --all`，避免误删所有 cache。
+
+手动清理方式：
+
+1. 打开仓库 `Actions` 页面。
+2. 选择 `Cache-Clean`。
+3. 点击 `Run workflow`。
+4. 建议第一次保持 `DRY_RUN=true`，只预览将要删除的 cache。
+5. 确认列表无误后再次运行，将 `DRY_RUN` 改为 `false` 执行删除。
+
+参数说明：
+
+- `CACHE_PREFIX`：默认 `CR1000A-`，只清理匹配此前缀的 cache。
+- `OLDER_THAN_DAYS`：默认 `10`，只删除创建时间早于该天数的 cache。
+- `KEEP_LATEST`：默认 `1`，每组保留最新几个 cache。
+- `DRY_RUN`：默认 `true`，手动执行时建议先预览。
