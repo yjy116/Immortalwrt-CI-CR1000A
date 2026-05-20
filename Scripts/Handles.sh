@@ -63,6 +63,23 @@ if [ -f "$IPERF3_FILE" ]; then
 	cd $PKG_PATH && echo "luci-app-iperf3 has been fixed!"
 fi
 
+# Fix CR1000A LAN probe: RTL9303 is initialized by userspace over SPI, so dp5
+# must not block on an unreadable MDIO PHY during kernel nss-dp probing.
+CR1000A_DTS="../target/linux/qualcommax/dts/ipq8072-cr1000a.dts"
+if [ -f "$CR1000A_DTS" ]; then
+	echo " "
+
+	perl -0pi -e '
+		my $replacement = qq{&dp5_syn {\n\tstatus = "okay";\n\tphy-mode = "usxgmii";\n\tlabel = "lan";\n\n\tfixed-link {\n\t\tspeed = <10000>;\n\t\tfull-duplex;\n\t};\n};};
+		s/&dp5_syn\s*\{\s*status = "okay";\s*phy-handle = <&rtl9303>;\s*label = "lan";\s*\};/$replacement/s
+			or die "failed to patch CR1000A dp5 fixed-link\n";
+	' "$CR1000A_DTS"
+
+	grep -q "fixed-link" "$CR1000A_DTS"
+
+	cd $PKG_PATH && echo "cr1000a lan dts has been fixed!"
+fi
+
 # Fix qca-nss-drv start order
 NSS_DRV="../feeds/nss_packages/qca-nss-drv/files/qca-nss-drv.init"
 if [ -f "$NSS_DRV" ]; then

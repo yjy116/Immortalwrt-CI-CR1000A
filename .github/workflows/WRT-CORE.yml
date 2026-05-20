@@ -299,6 +299,43 @@ jobs:
           sed -i 's/^          //' files/lib/rtl/init.sh
           chmod +x files/lib/rtl/init.sh
           grep -q "/dev/spidev1.0" files/lib/rtl/init.sh
+
+          # CR1000A has a PCIe QCN9074 6GHz radio. Make radio2 explicit so
+          # preserved/default wireless configs do not leave hostapd without a band.
+          mkdir -p files/etc/uci-defaults
+          cat > files/etc/uci-defaults/99-cr1000a-wireless <<EOF
+          #!/bin/sh
+          . /lib/functions.sh
+
+          [ "\$(board_name)" = "verizon,cr1000a" ] || exit 0
+
+          if ! uci -q get wireless.radio2 >/dev/null; then
+            logger -t cr1000a-wireless "radio2 is missing, skip 6GHz defaults"
+            exit 0
+          fi
+
+          uci -q batch <<EOT
+          set wireless.radio2.band='6g'
+          set wireless.radio2.channel='33'
+          set wireless.radio2.htmode='HE160'
+          set wireless.radio2.country='US'
+          set wireless.radio2.disabled='0'
+          set wireless.default_radio2=wifi-iface
+          set wireless.default_radio2.device='radio2'
+          set wireless.default_radio2.network='lan'
+          set wireless.default_radio2.mode='ap'
+          set wireless.default_radio2.ssid='${WRT_SSID}-6G'
+          set wireless.default_radio2.encryption='sae'
+          set wireless.default_radio2.ieee80211w='2'
+          set wireless.default_radio2.key='${WRT_WORD}'
+          commit wireless
+          EOT
+          exit 0
+          EOF
+
+          sed -i 's/^          //' files/etc/uci-defaults/99-cr1000a-wireless
+          chmod +x files/etc/uci-defaults/99-cr1000a-wireless
+          grep -q "wireless.radio2.band='6g'" files/etc/uci-defaults/99-cr1000a-wireless
           
           make download -j$(nproc)
 
