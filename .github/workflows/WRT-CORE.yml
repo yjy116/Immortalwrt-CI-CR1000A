@@ -248,7 +248,10 @@ jobs:
             files/lib/firmware/ath11k/QCN9074/hw1.0/amss.bin \
             files/lib/firmware/ath11k/QCN9074/hw1.0/m3.bin \
             files/lib/firmware/ath11k/QCN9074/hw1.0/board-2.bin \
+            files/lib/firmware/ath11k/QCN9074/hw1.0/board-2.working.bin \
             files/lib/firmware/ccpu.elf.leucadia \
+            files/lib/mmc/data_key \
+            files/lib/mmc/init.sh \
             files/lib/rtl/init.sh \
             files/lib/rtl/usrApp
           do
@@ -257,6 +260,45 @@ jobs:
               exit 1
             fi
           done
+
+          # Use the known-good CR1000A QCN9074 BDF as the runtime board-2.bin.
+          cp -f files/lib/firmware/ath11k/QCN9074/hw1.0/board-2.working.bin \
+            files/lib/firmware/ath11k/QCN9074/hw1.0/board-2.bin
+          echo "QCN9074 board-2.bin: $(sha256sum files/lib/firmware/ath11k/QCN9074/hw1.0/board-2.bin | cut -d ' ' -f 1)"
+
+          # Start RTL9303 only after spidev is present and keep usrApp alive.
+          cat > files/lib/rtl/init.sh <<'EOF'
+          #!/bin/ash
+          set -eu
+
+          cp -f /lib/libubus.so.* /lib/libubus.so 2>/dev/null || true
+          cp -f /lib/libubox.so.* /lib/libubox.so 2>/dev/null || true
+
+          retry=0
+          while [ ! -e /dev/spidev1.0 ] && [ "$retry" -lt 30 ]; do
+            sleep 1
+            retry=$((retry + 1))
+          done
+
+          if [ ! -e /dev/spidev1.0 ]; then
+            logger -t cr1000a-rtl "missing /dev/spidev1.0, RTL9303 init aborted"
+            exit 1
+          fi
+
+          ln -sf /dev/spidev1.0 /dev/spidev32765.0
+
+          control_fifo=/tmp/control_rtl9303.fifo
+          rm -f "$control_fifo"
+          mkfifo "$control_fifo"
+          tail -f "$control_fifo" | /lib/rtl/usrApp &
+
+          logger -t cr1000a-rtl "RTL9303 usrApp started through /dev/spidev1.0"
+          exit 0
+          EOF
+
+          sed -i 's/^          //' files/lib/rtl/init.sh
+          chmod +x files/lib/rtl/init.sh
+          grep -q "/dev/spidev1.0" files/lib/rtl/init.sh
           
           make download -j$(nproc)
 
