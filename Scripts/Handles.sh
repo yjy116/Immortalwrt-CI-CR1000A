@@ -63,47 +63,6 @@ if [ -f "$IPERF3_FILE" ]; then
 	cd $PKG_PATH && echo "luci-app-iperf3 has been fixed!"
 fi
 
-# Fix CR1000A LAN probe: RTL9303 is initialized by userspace over SPI, so dp5
-# must not block on an unreadable MDIO PHY during kernel nss-dp probing.
-CR1000A_DTS="../target/linux/qualcommax/dts/ipq8072-cr1000a.dts"
-if [ -f "$CR1000A_DTS" ]; then
-	echo " "
-
-	perl -0pi -e '
-		my $replacement = qq{&dp5_syn {\n\tstatus = "okay";\n\tphy-mode = "usxgmii";\n\tqcom,no-phy;\n\tlabel = "lan";\n};};
-		s/&dp5_syn\s*\{.*?\n\};/$replacement/s
-			or die "failed to patch CR1000A dp5 no-phy link\n";
-	' "$CR1000A_DTS"
-
-	grep -q "qcom,no-phy" "$CR1000A_DTS"
-
-	cd $PKG_PATH && echo "cr1000a lan dts has been fixed!"
-fi
-
-NSS_DP_PATCH_DIR="./kernel/qca-nss-dp/patches"
-if [ -d "$NSS_DP_PATCH_DIR" ]; then
-	echo " "
-
-	cp -f "$GITHUB_WORKSPACE/Patches/qca-nss-dp/08-cr1000a-no-phy-link.patch" \
-		"$NSS_DP_PATCH_DIR/08-cr1000a-no-phy-link.patch"
-	grep -q "qcom,no-phy" "$NSS_DP_PATCH_DIR/08-cr1000a-no-phy-link.patch"
-
-	cd $PKG_PATH && echo "qca-nss-dp cr1000a no-phy link patch has been added!"
-fi
-
-HOSTAPD_UC="./network/config/wifi-scripts/files-ucode/usr/share/ucode/wifi/hostapd.uc"
-if [ -f "$HOSTAPD_UC" ]; then
-	echo " "
-
-	sed -i '/let band = wiphy_band(phy, config.band);/a\
-\
-	if (!band)\
-		die(`${config.phy}: configured band ${config.band} is not exposed by nl80211; check CR1000A BDF/firmware and wireless band setting`);' "$HOSTAPD_UC"
-	grep -q "configured band" "$HOSTAPD_UC"
-
-	cd $PKG_PATH && echo "hostapd band diagnostics have been added!"
-fi
-
 # Fix qca-nss-drv start order
 NSS_DRV="../feeds/nss_packages/qca-nss-drv/files/qca-nss-drv.init"
 if [ -f "$NSS_DRV" ]; then

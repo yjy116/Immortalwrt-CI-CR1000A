@@ -244,12 +244,6 @@ jobs:
             files/lib/aqr/aq-fw-download \
             files/lib/aqr/aqr-v5.6.7.cld \
             files/lib/aqr/init.sh \
-            files/lib/firmware/ath11k/IPQ8074/hw2.0/board-2.bin \
-            files/lib/firmware/ath11k/QCN9074/hw1.0/amss.bin \
-            files/lib/firmware/ath11k/QCN9074/hw1.0/m3.bin \
-            files/lib/firmware/ath11k/QCN9074/hw1.0/board-2.bin \
-            files/lib/firmware/ath11k/QCN9074/hw1.0/board-2.working.bin \
-            files/lib/firmware/ccpu.elf.leucadia \
             files/lib/mmc/data_key \
             files/lib/mmc/init.sh \
             files/lib/rtl/init.sh \
@@ -261,82 +255,7 @@ jobs:
             fi
           done
 
-          # Use the known-good CR1000A QCN9074 BDF as the runtime board-2.bin.
-          cp -f files/lib/firmware/ath11k/QCN9074/hw1.0/board-2.working.bin \
-            files/lib/firmware/ath11k/QCN9074/hw1.0/board-2.bin
-          echo "QCN9074 board-2.bin: $(sha256sum files/lib/firmware/ath11k/QCN9074/hw1.0/board-2.bin | cut -d ' ' -f 1)"
-
-          # Start RTL9303 only after spidev is present and keep usrApp alive.
-          cat > files/lib/rtl/init.sh <<'EOF'
-          #!/bin/ash
-          set -eu
-
-          cp -f /lib/libubus.so.* /lib/libubus.so 2>/dev/null || true
-          cp -f /lib/libubox.so.* /lib/libubox.so 2>/dev/null || true
-
-          retry=0
-          while [ ! -e /dev/spidev1.0 ] && [ "$retry" -lt 30 ]; do
-            sleep 1
-            retry=$((retry + 1))
-          done
-
-          if [ ! -e /dev/spidev1.0 ]; then
-            logger -t cr1000a-rtl "missing /dev/spidev1.0, RTL9303 init aborted"
-            exit 1
-          fi
-
-          ln -sf /dev/spidev1.0 /dev/spidev32765.0
-
-          control_fifo=/tmp/control_rtl9303.fifo
-          rm -f "$control_fifo"
-          mkfifo "$control_fifo"
-          tail -f "$control_fifo" | /lib/rtl/usrApp &
-
-          logger -t cr1000a-rtl "RTL9303 usrApp started through /dev/spidev1.0"
-          exit 0
-          EOF
-
-          sed -i 's/^          //' files/lib/rtl/init.sh
-          chmod +x files/lib/rtl/init.sh
-          grep -q "/dev/spidev1.0" files/lib/rtl/init.sh
-
-          # CR1000A's PCIe QCN9024 currently exposes a reliable 5GHz profile
-          # with the available BDF. Keep radio2 usable instead of forcing 6GHz.
-          mkdir -p files/etc/uci-defaults
-          cat > files/etc/uci-defaults/99-cr1000a-wireless <<EOF
-          #!/bin/sh
-          . /lib/functions.sh
-
-          [ "\$(board_name)" = "verizon,cr1000a" ] || exit 0
-
-          if ! uci -q get wireless.radio2 >/dev/null; then
-            logger -t cr1000a-wireless "radio2 is missing, skip QCN 5GHz fallback"
-            exit 0
-          fi
-
-          uci -q batch <<EOT
-          set wireless.radio2.band='5g'
-          set wireless.radio2.channel='36'
-          set wireless.radio2.htmode='HE80'
-          set wireless.radio2.country='CN'
-          set wireless.radio2.disabled='0'
-          set wireless.default_radio2=wifi-iface
-          set wireless.default_radio2.device='radio2'
-          set wireless.default_radio2.network='lan'
-          set wireless.default_radio2.mode='ap'
-          set wireless.default_radio2.ssid='${WRT_SSID}-QCN5G'
-          set wireless.default_radio2.encryption='psk2+ccmp'
-          delete wireless.default_radio2.ieee80211w
-          set wireless.default_radio2.key='${WRT_WORD}'
-          commit wireless
-          EOT
-          logger -t cr1000a-wireless "radio2 configured as QCN 5GHz fallback on channel 36/HE80"
-          exit 0
-          EOF
-
-          sed -i 's/^          //' files/etc/uci-defaults/99-cr1000a-wireless
-          chmod +x files/etc/uci-defaults/99-cr1000a-wireless
-          grep -q "wireless.radio2.band='5g'" files/etc/uci-defaults/99-cr1000a-wireless
+          echo "CR1000A reference overlay files verified."
           
           make download -j$(nproc)
 
