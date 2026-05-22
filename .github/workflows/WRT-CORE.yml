@@ -247,7 +247,9 @@ jobs:
             files/lib/mmc/data_key \
             files/lib/mmc/init.sh \
             files/lib/rtl/init.sh \
-            files/lib/rtl/usrApp
+            files/lib/rtl/usrApp \
+            files/sbin/exec-dir \
+            files/usr/share/switch/10-rtl9303-link
           do
             if [ ! -s "$FILE" ]; then
               echo "::error::Missing required CR1000A overlay file: $FILE"
