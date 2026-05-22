@@ -1,0 +1,35 @@
+diff --git a/nss_dp_main.c b/nss_dp_main.c
+index fa3a35a..a0b66fe 100644
+--- a/nss_dp_main.c
++++ b/nss_dp_main.c
+@@ -695,6 +695,7 @@ static int32_t nss_dp_of_get_pdata(struct device_node *np,
+ 	uint8_t *maddr;
+ 	struct nss_dp_dev *dp_priv;
+ 	struct resource memres_devtree = {0};
++	bool no_phy;
+ #if (LINUX_VERSION_CODE > KERNEL_VERSION(6, 1, 0))
+ 	uint8_t mac_addr[ETH_ALEN];
+ #endif
+@@ -724,8 +725,12 @@ static int32_t nss_dp_of_get_pdata(struct device_node *np,
+ 	hal_pdata->netdev = netdev;
+ 	hal_pdata->macid = dp_priv->macid;
+ 
++	no_phy = of_property_read_bool(np, "qcom,no-phy");
++	if (no_phy)
++		pr_info("%s: no PHY configured, forcing link up without PHY polling\n", np->name);
++
+ 	dp_priv->phy_node = of_parse_phandle(np, "phy-handle", 0);
+-	if (!dp_priv->phy_node) {
++	if (!dp_priv->phy_node && !no_phy) {
+ 		if (of_phy_is_fixed_link(np)) {
+ 			int ret = of_phy_register_fixed_link(np);
+ 
+@@ -737,7 +742,7 @@ static int32_t nss_dp_of_get_pdata(struct device_node *np,
+ 		dp_priv->phy_node = of_node_get(np);
+ 	}
+ 
+-	if (!dp_priv->phy_node)
++	if (!dp_priv->phy_node && !no_phy)
+ 		pr_err("%s: no phy-handle or fixed-link found\n", np->name);
+ 
+ #if (LINUX_VERSION_CODE < KERNEL_VERSION(6, 1, 0))
