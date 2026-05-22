@@ -1,0 +1,109 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: yjy116 <yjy116@gmail.com>
+Date: Fri, 22 May 2026 13:40:00 +0800
+Subject: [PATCH] net: nss-dp: allow explicit no-phy ports
+
+The Verizon CR1000A connects NSS DP5 to an RTL9303 switch that is
+initialized from userspace. It is not a normal MDIO PHY, so the restored
+of_phy_connect() path must not try to attach to the RTL9303 pseudo node.
+
+Honor qcom,no-phy by leaving phy_node unset. The existing open path then
+forces the dataplane link up for ports without an attached phydev.
+
+Also prefer an explicit qcom,forced-speed value for no-phy ethtool queries
+to avoid SSDK speed polling failures before the userspace switch helper is
+fully ready.
+---
+ nss_dp_ethtools.c | 31 ++++++++++++++++++-------------
+ nss_dp_main.c     | 29 ++++++++++++++++++-----------
+ 2 files changed, 36 insertions(+), 24 deletions(-)
+
+--- a/nss_dp_ethtools.c
++++ b/nss_dp_ethtools.c
+@@ -408,20 +408,25 @@ static int nss_dp_get_ethtool_link_ksett
+ 		return phy_ethtool_get_link_ksettings(dev, cmd);
+ 	}
+ 
+-	port_id = dp_priv->macid;
+-	/*
+-	 * No phydev attached implies a fixed speed link. Read the fixed link speed and duplex from SSDK
+-	 */
+-	ret = fal_port_speed_get(NSS_DP_ACL_DEV_ID, port_id, &dp_priv->fixed_link_speed);
+-	if (ret != SW_OK) {
+-		netdev_warn(dev, "Failed to get link speed for ethernet device\n");
+-		return -ENODEV;
+-	}
++	if (dp_priv->forced_speed) {
++		dp_priv->fixed_link_speed = dp_priv->forced_speed;
++		duplex = dp_priv->forced_duplex;
++	} else {
++		port_id = dp_priv->macid;
++		/*
++		 * No phydev attached implies a fixed speed link. Read the fixed link speed and duplex from SSDK
++		 */
++		ret = fal_port_speed_get(NSS_DP_ACL_DEV_ID, port_id, &dp_priv->fixed_link_speed);
++		if (ret != SW_OK) {
++			netdev_warn(dev, "Failed to get link speed for ethernet device\n");
++			return -ENODEV;
++		}
+ 
+-	ret = fal_port_duplex_get(NSS_DP_ACL_DEV_ID, port_id, &duplex);
+-	if (ret != SW_OK) {
+-		netdev_warn(dev, "Failed to get duplex for ethernet device\n");
+-		return -ENODEV;
++		ret = fal_port_duplex_get(NSS_DP_ACL_DEV_ID, port_id, &duplex);
++		if (ret != SW_OK) {
++			netdev_warn(dev, "Failed to get duplex for ethernet device\n");
++			return -ENODEV;
++		}
+ 	}
+ 
+ 	switch (dp_priv->fixed_link_speed) {
+--- a/nss_dp_main.c
++++ b/nss_dp_main.c
+@@ -695,5 +695,6 @@ static int32_t nss_dp_of_get_pdata(struc
+ 	struct nss_dp_dev *dp_priv;
+ 	struct resource memres_devtree = {0};
++	bool no_phy;
+ #if (LINUX_VERSION_CODE > KERNEL_VERSION(6, 1, 0))
+ 	uint8_t mac_addr[ETH_ALEN];
+ #endif
+@@ -723,21 +724,27 @@ static int32_t nss_dp_of_get_pdata(struc
+ 	hal_pdata->netdev = netdev;
+ 	hal_pdata->macid = dp_priv->macid;
+ 
+-	dp_priv->phy_node = of_parse_phandle(np, "phy-handle", 0);
+-	if (!dp_priv->phy_node) {
+-		if (of_phy_is_fixed_link(np)) {
+-			int ret = of_phy_register_fixed_link(np);
++	no_phy = of_property_read_bool(np, "qcom,no-phy");
++	if (no_phy) {
++		dp_priv->phy_node = NULL;
++		pr_info("%s: no PHY configured, link will be forced up\n", np->name);
++	} else {
++		dp_priv->phy_node = of_parse_phandle(np, "phy-handle", 0);
++		if (!dp_priv->phy_node) {
++			if (of_phy_is_fixed_link(np)) {
++				int ret = of_phy_register_fixed_link(np);
+ 
+-			if (ret < 0) {
+-				pr_err("%s: fail to register fixed-link: %d\n", np->name, ret);
+-				return -EFAULT;
++				if (ret < 0) {
++					pr_err("%s: fail to register fixed-link: %d\n", np->name, ret);
++					return -EFAULT;
++				}
+ 			}
++			dp_priv->phy_node = of_node_get(np);
+ 		}
+-		dp_priv->phy_node = of_node_get(np);
+-	}
+ 
+-	if (!dp_priv->phy_node)
+-		pr_err("%s: no phy-handle or fixed-link found\n", np->name);
++		if (!dp_priv->phy_node)
++			pr_err("%s: no phy-handle or fixed-link found\n", np->name);
++	}
+ 
+ #if (LINUX_VERSION_CODE < KERNEL_VERSION(6, 1, 0))
+ 	dp_priv->phy_mii_type = of_get_phy_mode(np);
