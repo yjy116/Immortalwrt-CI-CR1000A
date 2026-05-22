@@ -68,7 +68,9 @@ CR1000A_DTS="../target/linux/qualcommax/dts/ipq8072-cr1000a.dts"
 if [ -f "$CR1000A_DTS" ]; then
 	echo " "
 
+	perl -0pi -e 'my $replacement = qq{rtl9303:port\@5 {\n\t\t\tport_id = <5>;\n\t\t\tphy_address = <0x4>;\n\t\t\tforced-speed = <10000>;\n\t\t\tforced-duplex = <1>;\n\t\t};}; s/rtl9303:port\@5\s*\{.*?\n\s*\};/$replacement/s or die "failed to patch CR1000A rtl9303 port force mode\n";' "$CR1000A_DTS"
 	perl -0pi -e 'my $replacement = qq{&dp5_syn {\n\tstatus = "okay";\n\tphy-mode = "usxgmii";\n\tqcom,no-phy;\n\tqcom,forced-speed = <10000>;\n\tqcom,forced-duplex = <1>;\n\tlabel = "lan";\n};}; s/&dp5_syn\s*\{.*?\n\};\s*\n\s*&dp6_syn/$replacement\n\n&dp6_syn/s or die "failed to patch CR1000A dp5_syn\n";' "$CR1000A_DTS"
+	grep -q "forced-speed = <10000>" "$CR1000A_DTS"
 	grep -q "qcom,no-phy" "$CR1000A_DTS"
 
 	cd $PKG_PATH && echo "cr1000a lan dts has been fixed!"
