@@ -68,7 +68,7 @@ CR1000A_DTS="../target/linux/qualcommax/dts/ipq8072-cr1000a.dts"
 if [ -f "$CR1000A_DTS" ]; then
 	echo " "
 
-	perl -0pi -e 'my $replacement = qq{&dp5_syn {\n\tstatus = "okay";\n\tfixed-link {\n\t\tspeed = <10000>;\n\t\tfull-duplex;\n\t};\n\tlabel = "lan";\n};}; s/&dp5_syn\s*\{.*?\n\};\s*\n\s*&dp6_syn/$replacement\n\n&dp6_syn/s or die "failed to patch CR1000A dp5_syn\n";' "$CR1000A_DTS"
+	perl -0pi -e 'my $replacement = qq{&dp5_syn {\n\tstatus = "okay";\n\tlabel = "lan";\n\tfixed-link {\n\t\tspeed = <10000>;\n\t\tfull-duplex;\n\t};\n};}; s/&dp5_syn\s*\{.*?\n\};\s*\n\s*&dp6_syn/$replacement\n\n&dp6_syn/s or die "failed to patch CR1000A dp5_syn\n";' "$CR1000A_DTS"
 	grep -q "fixed-link" "$CR1000A_DTS"
 
 	cd $PKG_PATH && echo "cr1000a lan dts has been fixed!"
