@@ -68,7 +68,7 @@ CR1000A_DTS="../target/linux/qualcommax/dts/ipq8072-cr1000a.dts"
 if [ -f "$CR1000A_DTS" ]; then
 	echo " "
 
-	perl -0pi -e 'my $replacement = qq{rtl9303:port\@5 {\n\t\t\tport_id = <5>;\n\t\t\tphy_address = <0x4>;\n\t\t\tforced-speed = <10000>;\n\t\t\tforced-duplex = <1>;\n\t\t};}; s/rtl9303:port\@5\s*\{.*?\n\s*\};/$replacement/s or die "failed to patch CR1000A rtl9303 port force mode\n";' "$CR1000A_DTS"
+	perl -0pi -e 's/((?:[A-Za-z0-9_]+:)?port\@5)\s*\{.*?\n\s*\};/$1 {\n\t\t\tport_id = <5>;\n\t\t\tphy_address = <0x4>;\n\t\t\tforced-speed = <10000>;\n\t\t\tforced-duplex = <1>;\n\t\t};/s or die "failed to patch CR1000A rtl9303 port force mode\n";' "$CR1000A_DTS"
 	perl -0pi -e 'my $replacement = qq{&dp5_syn {\n\tstatus = "okay";\n\tphy-mode = "usxgmii";\n\tqcom,no-phy;\n\tqcom,forced-speed = <10000>;\n\tqcom,forced-duplex = <1>;\n\tlabel = "lan";\n};}; s/&dp5_syn\s*\{.*?\n\};\s*\n\s*&dp6_syn/$replacement\n\n&dp6_syn/s or die "failed to patch CR1000A dp5_syn\n";' "$CR1000A_DTS"
 	grep -q "forced-speed = <10000>" "$CR1000A_DTS"
 	grep -q "qcom,no-phy" "$CR1000A_DTS"
@@ -80,16 +80,23 @@ else
 fi
 
 # Add CR1000A no-phy support after VIKINGYFY's restored of_phy_connect patch
-NSS_DP_PATCH_DIR="./kernel/qca-nss-dp/patches"
-if [ -d "$NSS_DP_PATCH_DIR" ]; then
+NSS_DP_PATCH_DIR=""
+for patch_dir in "./qca-nss/qca-nss-dp/patches" "./kernel/qca-nss-dp/patches"; do
+	if [ -d "$patch_dir" ]; then
+		NSS_DP_PATCH_DIR="$patch_dir"
+		break
+	fi
+done
+
+if [ -n "$NSS_DP_PATCH_DIR" ]; then
 	echo " "
 
 	cp -f "$GITHUB_WORKSPACE/Patches/qca-nss-dp/08-cr1000a-no-phy-link.patch" "$NSS_DP_PATCH_DIR/08-cr1000a-no-phy-link.patch"
 	grep -q "qcom,no-phy" "$NSS_DP_PATCH_DIR/08-cr1000a-no-phy-link.patch"
 
-	cd $PKG_PATH && echo "qca-nss-dp cr1000a no-phy patch has been added!"
+	cd $PKG_PATH && echo "qca-nss-dp cr1000a no-phy patch has been added to $NSS_DP_PATCH_DIR!"
 else
-	echo "::error::Missing qca-nss-dp patch directory: $NSS_DP_PATCH_DIR"
+	echo "::error::Missing qca-nss-dp patch directory"
 	exit 1
 fi
 
