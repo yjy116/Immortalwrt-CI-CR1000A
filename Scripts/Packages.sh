@@ -57,6 +57,7 @@ UPDATE_PACKAGE "kucat-config" "sirpdboy/luci-app-kucat-config" "master"
 # Keep HomeProxy and sing-box aligned with the selected upstream branch.
 UPDATE_PACKAGE "momo" "nikkinikki-org/OpenWrt-momo" "main"
 UPDATE_PACKAGE "nikki" "nikkinikki-org/OpenWrt-nikki" "main"
+UPDATE_PACKAGE "luci-app-daed" "QiuSimons/luci-app-daed" "kix"
 UPDATE_PACKAGE "openclash" "vernesong/OpenClash" "dev" "pkg"
 UPDATE_PACKAGE "passwall" "Openwrt-Passwall/openwrt-passwall" "main" "pkg"
 UPDATE_PACKAGE "passwall2" "Openwrt-Passwall/openwrt-passwall2" "main" "pkg"
@@ -77,6 +78,20 @@ UPDATE_PACKAGE "quickfile" "sbwml/luci-app-quickfile" "main"
 UPDATE_PACKAGE "timecontrol" "sirpdboy/luci-app-timecontrol" "main"
 UPDATE_PACKAGE "viking" "VIKINGYFY/packages" "main" "" "gecoosac luci-app-timewol luci-app-wolplus"
 UPDATE_PACKAGE "vnt" "lmq8267/luci-app-vnt" "main"
+
+rm -rf ../feeds/luci/applications/luci-app-dae*
+rm -rf ../feeds/packages/net/{v2ray-geodata,dae*}
+cp -r "$GITHUB_WORKSPACE/package/"* ./
+
+DAED_MAKEFILE="luci-app-daed/daed/Makefile"
+DAED_INIT="luci-app-daed/luci-app-daed/root/etc/init.d/luci_daed"
+
+[ -f "$DAED_MAKEFILE" ] || { echo "::error::Missing daed Makefile: $DAED_MAKEFILE"; exit 1; }
+[ -f "$DAED_INIT" ] || { echo "::error::Missing daed init script: $DAED_INIT"; exit 1; }
+
+sed -i 's/pnpm install ; \\/pnpm install --no-frozen-lockfile ; \\/g' "$DAED_MAKEFILE"
+sed -i 's|github.com/daeuniverse/quic-go|github.com/olicesx/quic-go|g' "$DAED_MAKEFILE"
+sed -i 's|/run/i\\  procd_set_param|/procd_set_param command/i \\\tprocd_set_param|g' "$DAED_INIT"
 
 #更新软件包版本
 UPDATE_VERSION() {
