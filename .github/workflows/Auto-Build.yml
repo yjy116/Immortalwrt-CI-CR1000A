@@ -21,7 +21,7 @@ jobs:
       - name: Check upstream updates (last 10 days)
         id: check
         env:
-          SOURCE: VIKINGYFY/immortalwrt
+          SOURCE: yjy116/immortalwrt
           BRANCH: main
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |

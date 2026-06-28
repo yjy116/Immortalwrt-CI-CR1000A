@@ -1,7 +1,7 @@
 # OpenWRT-CI
 云编译CR1000A OpenWRT固件
 - 源码：
-[VIKINGYFY/immortalwrt](https://github.com/VIKINGYFY/immortalwrt.git)
+[yjy116/immortalwrt](https://github.com/yjy116/immortalwrt.git)
 [tsg2k2/openwrt](https://github.com/tsg2k2/openwrt)
 
 # 硬件配置：

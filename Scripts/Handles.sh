@@ -79,7 +79,7 @@ else
 	exit 1
 fi
 
-# Add CR1000A no-phy support after VIKINGYFY's restored of_phy_connect patch
+# Add CR1000A no-phy support after upstream's restored of_phy_connect patch
 NSS_DP_PATCH_DIR=""
 for patch_dir in "./qca-nss/qca-nss-dp/patches" "./kernel/qca-nss-dp/patches"; do
 	if [ -d "$patch_dir" ]; then
@@ -98,26 +98,6 @@ if [ -n "$NSS_DP_PATCH_DIR" ]; then
 else
 	echo "::error::Missing qca-nss-dp patch directory"
 	exit 1
-fi
-
-# Fix qca-nss-drv start order
-NSS_DRV="../feeds/nss_packages/qca-nss-drv/files/qca-nss-drv.init"
-if [ -f "$NSS_DRV" ]; then
-	echo " "
-
-	sed -i 's/START=.*/START=85/g' $NSS_DRV
-
-	cd $PKG_PATH && echo "qca-nss-drv has been fixed!"
-fi
-
-#修改qca-nss-pbuf启动顺序
-NSS_PBUF="./kernel/mac80211/files/qca-nss-pbuf.init"
-if [ -f "$NSS_PBUF" ]; then
-	echo " "
-
-	sed -i 's/START=.*/START=86/g' $NSS_PBUF
-
-	cd $PKG_PATH && echo "qca-nss-pbuf has been fixed!"
 fi
 
 #修复TailScale配置文件冲突
