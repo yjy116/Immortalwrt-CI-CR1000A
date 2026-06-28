@@ -80,8 +80,7 @@ UPDATE_PACKAGE "viking" "VIKINGYFY/packages" "main" "" "gecoosac luci-app-timewo
 UPDATE_PACKAGE "vnt" "lmq8267/luci-app-vnt" "main"
 
 rm -rf ../feeds/luci/applications/luci-app-dae*
-rm -rf ../feeds/packages/net/{v2ray-geodata,dae*}
-cp -r "$GITHUB_WORKSPACE/package/"* ./
+rm -rf ../feeds/packages/net/dae*
 
 DAED_MAKEFILE="luci-app-daed/daed/Makefile"
 DAED_INIT="luci-app-daed/luci-app-daed/root/etc/init.d/luci_daed"
