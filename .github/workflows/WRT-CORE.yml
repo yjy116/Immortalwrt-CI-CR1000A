@@ -42,7 +42,8 @@ on:
         type: string
       WRT_TEST:
         required: false
-        type: string
+        default: false
+        type: boolean
 
 env:
   GITHUB_TOKEN: ${{secrets.GITHUB_TOKEN}}
@@ -117,10 +118,13 @@ jobs:
 
       - name: Initialization Values
         run: |
+          WRT_TARGET=$(grep -m 1 -oP '^CONFIG_TARGET_\K[\w]+(?=\=y)' "./Config/$WRT_CONFIG.txt")
+          WRT_SUBTARGET=$(grep -m 1 -oP "^CONFIG_TARGET_${WRT_TARGET}_\K[\w]+(?=\=y)" "./Config/$WRT_CONFIG.txt")
           echo "WRT_DATE=$(TZ=UTC-8 date +"%y.%m.%d-%H.%M.%S")" >> $GITHUB_ENV
           echo "WRT_MARK=${GITHUB_REPOSITORY%%/*}" >> $GITHUB_ENV
           echo "WRT_INFO=${WRT_SOURCE%%/*}" >> $GITHUB_ENV
-          echo "WRT_TARGET=$(grep -m 1 -oP '^CONFIG_TARGET_\K[\w]+(?=\=y)' ./Config/$WRT_CONFIG.txt)" >> $GITHUB_ENV
+          echo "WRT_TARGET=$WRT_TARGET" >> $GITHUB_ENV
+          echo "WRT_SUBTARGET=$WRT_SUBTARGET" >> $GITHUB_ENV
           echo "WRT_WIFI=wifi-yes" >> $GITHUB_ENV
           echo "WRT_KVER=none" >> $GITHUB_ENV
           echo "WRT_LIST=none" >> $GITHUB_ENV
@@ -129,7 +133,15 @@ jobs:
         run: |
           git clone --depth=1 --single-branch --branch $WRT_BRANCH $WRT_REPO ./wrt/
 
-          cd ./wrt/ && echo "WRT_HASH=$(git log -1 --pretty=format:'%h')" >> $GITHUB_ENV
+          cd ./wrt/
+          WRT_HASH=$(git rev-parse HEAD)
+          WRT_HOST_ID=$(. /etc/os-release && printf '%s-%s' "$ID" "$VERSION_ID")
+          export WRT_HOST_ID
+          WRT_CACHE_PREFIX=$(bash "$GITHUB_WORKSPACE/Scripts/CacheKey.sh")
+          echo "WRT_HASH=$WRT_HASH" >> "$GITHUB_ENV"
+          echo "WRT_CACHE_PREFIX=$WRT_CACHE_PREFIX" >> "$GITHUB_ENV"
+          echo "Build source: $WRT_HASH"
+          echo "Compatible cache prefix: $WRT_CACHE_PREFIX"
 
           # GitHub Action 移除国内下载源
           PROJECT_MIRRORS_FILE="./scripts/projectsmirrors.json"
@@ -146,43 +158,24 @@ jobs:
         if: env.WRT_TEST != 'true'
         uses: actions/cache/restore@v5
         with:
-          key: ${{env.WRT_CONFIG}}-${{env.WRT_INFO}}-full-${{env.WRT_HASH}}
+          key: ${{env.WRT_CACHE_PREFIX}}-full-${{env.WRT_HASH}}
           restore-keys: |
-            ${{env.WRT_CONFIG}}-${{env.WRT_INFO}}-full-
-            ${{env.WRT_CONFIG}}-${{env.WRT_INFO}}-warm-${{env.WRT_HASH}}
-            ${{env.WRT_CONFIG}}-${{env.WRT_INFO}}-warm-
-            ${{env.WRT_CONFIG}}-${{env.WRT_INFO}}-${{env.WRT_HASH}}
-            ${{env.WRT_CONFIG}}-${{env.WRT_INFO}}
+            ${{env.WRT_CACHE_PREFIX}}-full-
+            ${{env.WRT_CACHE_PREFIX}}-warm-${{env.WRT_HASH}}
+            ${{env.WRT_CACHE_PREFIX}}-warm-
           path: |
             ./wrt/.ccache
-            ./wrt/staging_dir/host*
-            ./wrt/staging_dir/tool*
-
-      - name: Detect Build Cache
-        id: build-cache-state
-        if: env.WRT_TEST != 'true'
-        run: |
-          cache_present=0
-          if [ -d "./wrt/staging_dir/host" ] || [ -d "./wrt/staging_dir/hostpkg" ] || compgen -G "./wrt/staging_dir/toolchain-*" >/dev/null; then
-            cache_present=1
-          fi
-
-          echo "cache_present=${cache_present}" >> "$GITHUB_OUTPUT"
+            ./wrt/staging_dir/host
+            ./wrt/staging_dir/toolchain-*
 
       - name: Update Caches
-        if: env.WRT_TEST != 'true' && steps.build-cache-state.outputs.cache_present == '1'
+        if: env.WRT_TEST != 'true' && steps.restore-build-cache.outputs.cache-matched-key != ''
         run: |
-          if [ -d "./wrt/staging_dir" ]; then
-            find "./wrt/staging_dir" -type d -name "stamp" -not -path "*target*" | while read -r DIR; do
-              find "$DIR" -type f -exec touch {} +
-            done
-
-            mkdir -p ./wrt/tmp && echo "1" > ./wrt/tmp/.build
-
-            echo "toolchain skiped done!"
-          else
-            echo "caches missed!"
-          fi
+          find "./wrt/staging_dir" -type d -name "stamp" -not -path "*target*" | while read -r DIR; do
+            find "$DIR" -type f -exec touch {} +
+          done
+          mkdir -p ./wrt/tmp && echo "1" > ./wrt/tmp/.build
+          echo "Restored compatible tools and toolchain."
 
       - name: Update Feeds
         run: |
@@ -217,21 +210,21 @@ jobs:
           clang --version | head -n 1
 
       - name: Prewarm Build Cache
-        if: env.WRT_TEST != 'true' && steps.build-cache-state.outputs.cache_present != '1'
+        if: env.WRT_TEST != 'true' && steps.restore-build-cache.outputs.cache-matched-key == ''
         run: |
           cd ./wrt/
 
           make tools/install toolchain/install -j$(nproc)
 
       - name: Save Warm Build Cache
-        if: env.WRT_TEST != 'true' && steps.build-cache-state.outputs.cache_present != '1'
+        if: env.WRT_TEST != 'true' && steps.restore-build-cache.outputs.cache-matched-key == ''
         uses: actions/cache/save@v5
         with:
-          key: ${{env.WRT_CONFIG}}-${{env.WRT_INFO}}-warm-${{env.WRT_HASH}}
+          key: ${{env.WRT_CACHE_PREFIX}}-warm-${{env.WRT_HASH}}
           path: |
             ./wrt/.ccache
-            ./wrt/staging_dir/host*
-            ./wrt/staging_dir/tool*
+            ./wrt/staging_dir/host
+            ./wrt/staging_dir/toolchain-*
 
       - name: Download Packages
         if: env.WRT_TEST != 'true'
@@ -277,11 +270,11 @@ jobs:
         if: env.WRT_TEST != 'true' && success() && steps.restore-build-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@v5
         with:
-          key: ${{env.WRT_CONFIG}}-${{env.WRT_INFO}}-full-${{env.WRT_HASH}}
+          key: ${{env.WRT_CACHE_PREFIX}}-full-${{env.WRT_HASH}}
           path: |
             ./wrt/.ccache
-            ./wrt/staging_dir/host*
-            ./wrt/staging_dir/tool*
+            ./wrt/staging_dir/host
+            ./wrt/staging_dir/toolchain-*
 
       - name: Machine Information
         run: |

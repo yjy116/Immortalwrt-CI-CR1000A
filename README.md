@@ -42,7 +42,27 @@ Scripts——自定义脚本
 
 Config——自定义配置
 
+# 2026-09 上游适配
+
+源码继续使用 `yjy116/immortalwrt` 的 `main` 分支。本轮核对的上游基线为
+[VIKINGYFY/immortalwrt 90448ee](https://github.com/VIKINGYFY/immortalwrt/commit/90448eeb2b8f5d172caedfe6d96ab3bacb058c09)，内核为 6.18.44。
+
+- 使用上游新增的 CR1000A 专用 QCN9074 板级文件、无线固件和 board-id 修复；QCN9024 第三射频使用 QCN9074 驱动路径。
+- 纳入上游 NSS/EDMA 启动、DMA、NAPI/GRO 和 NSS 频率设置更新。
+- 保留 `Patches/qca-nss-dp/08-cr1000a-no-phy-link.patch`、LAN 强制链路设置及 `yjy116/files` 中的 RTL9303/AQR 初始化脚本。
+- 无线配置仅定制 SSID 和密码，保留上游国家码、加密表达式；实际国家码仍应按使用地区设置。
+- HomeProxy 与 sing-box 继续使用官方 feed 配套版本，现有插件选择和定时编译逻辑保持不变。
+
+补丁和配置检查不能替代刷机测试。本轮更新后的所有 LAN 口、第三射频及原生 6GHz 仍需实机验证。
+
 # GitHub Actions Cache 清理说明
+
+`CR1000A` 和 `CR1000A-TEST` 使用同一套缓存规则：按源码仓库、分支、平台、构建工具/内核源码、编译配置和构建主机生成兼容性指纹。
+这些内容变化时会自动使用新缓存，不再匹配旧的宽泛缓存键；无需因为普通升级先手动清空全部缓存。
+
+没有兼容缓存时，会在编译固件前预热 `tools` 和 `toolchain`，预热成功立即保存，完整编译成功后再保存完整缓存。
+缓存仅包含 `.ccache`、`staging_dir/host` 和交叉工具链；跟随 feeds 变化的 `hostpkg` 重新构建。
+本轮首次编译会重新预热，之后兼容的编译可恢复缓存。保留 `actions/cache@v5` 和手动一键清理，不增加自动缓存删除任务。
 
 GitHub Actions 会自动删除超过 7 天未访问的 cache。平时不需要定期清理，缓存能加速工具链和 host 目录恢复。
 
@@ -60,3 +80,13 @@ GitHub Actions 会自动删除超过 7 天未访问的 cache。平时不需要�
 3. 点击 `Run workflow`。
 
 这个 workflow 会清空本仓库的全部 GitHub Actions cache，不会删除 Release、固件文件、源码文件或 workflow 运行记录。清理后第一次编译会变慢，因为需要重新预热和保存缓存；后续再次编译会恢复加速。
+
+# 本地适配检查
+
+在 Bash 和 Python 3 环境中，指定已检出的上游源码目录运行：
+
+```sh
+WRT_SOURCE_CHECK=/path/to/immortalwrt python3 Tests/test_compatibility.py -v
+```
+
+检查真实设备树变换、第三射频板级数据、无线设置表达式及缓存兼容性；固件编译仍由 GitHub Actions 验证。
