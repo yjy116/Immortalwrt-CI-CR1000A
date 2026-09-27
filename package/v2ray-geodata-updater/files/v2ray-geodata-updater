@@ -1,0 +1,48 @@
+#!/bin/sh
+# SPDX-License-Identifier: GPL-3.0-only
+set -eu
+
+V2RAY_DATA_DIR=${V2RAY_DATA_DIR:-/usr/share/v2ray}
+DAE_INIT_DIR=${DAE_INIT_DIR:-/etc/init.d}
+
+download_verified() {
+  local name=$1 url=$2 staging=$3 checksum
+  curl -fL -o "$staging/$name" "$url"
+  curl -fL -o "$staging/$name.sha256sum" "$url.sha256sum"
+  checksum=$(awk 'NR == 1 { print $1 }' "$staging/$name.sha256sum")
+  if ! printf '%s\n' "$checksum" | grep -Eq '^[a-fA-F0-9]{64}$'; then
+    echo "Invalid checksum response for $name" >&2
+    return 1
+  fi
+  (cd "$staging" && printf '%s  %s\n' "$checksum" "$name" | sha256sum -c -)
+}
+
+restart_active_backend() {
+  local name
+  for name in daed dae; do
+    if [ -x "$DAE_INIT_DIR/$name" ] && "$DAE_INIT_DIR/$name" running; then
+      "$DAE_INIT_DIR/$name" restart
+      return
+    fi
+  done
+}
+
+main() (
+  mkdir -p "$V2RAY_DATA_DIR"
+  staging=$(mktemp -d "$V2RAY_DATA_DIR/.update.XXXXXX")
+  trap 'rm -rf "$staging"' EXIT
+  download_verified geoip.dat \
+    https://github.com/Loyalsoldier/geoip/releases/latest/download/geoip.dat "$staging"
+  download_verified geosite.dat \
+    https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geosite.dat "$staging"
+  # Neither installed dataset changes until both downloads have been verified.
+  chmod 644 "$staging/geoip.dat" "$staging/geosite.dat"
+  mv "$staging/geoip.dat" "$V2RAY_DATA_DIR/geoip.dat"
+  mv "$staging/geosite.dat" "$V2RAY_DATA_DIR/geosite.dat"
+  restart_active_backend
+  logger -t v2ray-geodata-updater 'Verified geoip and geosite updates installed.'
+  rm -rf "$staging"
+  trap - EXIT
+)
+
+main "$@"

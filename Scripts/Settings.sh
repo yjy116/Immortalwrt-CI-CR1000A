@@ -2,18 +2,6 @@
 # SPDX-License-Identifier: MIT
 # Copyright (C) 2026 VIKINGYFY
 
-disable_kernel_option() {
-	local OPTION="$1"
-	local CONFIG_DIR="$2"
-
-	[ -d "$CONFIG_DIR" ] || return 0
-
-	find "$CONFIG_DIR" -maxdepth 1 -type f -name "config-*" | while read -r CONFIG_FILE; do
-		sed -i "/^CONFIG_${OPTION}=\\|^# CONFIG_${OPTION} is not set/d" "$CONFIG_FILE"
-		echo "# CONFIG_${OPTION} is not set" >> "$CONFIG_FILE"
-	done
-}
-
 #移除luci-app-attendedsysupgrade
 sed -i "/attendedsysupgrade/d" $(find ./feeds/luci/collections/ -type f -name "Makefile")
 #修改默认主题
@@ -35,7 +23,6 @@ elif [ -f "$WIFI_UC" ]; then
 	sed -i "s/ssid='.*'/ssid='$WRT_SSID'/g" $WIFI_UC
 	#修改WIFI密码
 	sed -i "s/key='.*'/key='$WRT_WORD'/g" $WIFI_UC
-	# 保留上游按频段生成的国家码和加密表达式
 fi
 
 CFG_FILE="./package/base-files/files/bin/config_generate"
@@ -69,12 +56,6 @@ fi
 #高通平台调整
 DTS_PATH="./target/linux/qualcommax/dts/"
 if [[ "${WRT_TARGET^^}" == *"QUALCOMMAX"* ]]; then
-	disable_kernel_option "ARM64_BRBE" "./target/linux/qualcommax"
-	disable_kernel_option "ARM64_BRBE" "./target/linux/qualcommax/ipq807x"
-	#取消nss相关feed
-	echo "CONFIG_FEED_nss_packages=n" >> ./.config
-	echo "CONFIG_FEED_sqm_scripts_nss=n" >> ./.config
-	echo "CONFIG_PACKAGE_kmod-usb-serial-qualcomm=y" >> ./.config
 	#无WIFI配置调整Q6大小
 	if [[ "${WRT_CONFIG,,}" == *"wifi"* && "${WRT_CONFIG,,}" == *"no"* ]]; then
 		find $DTS_PATH -type f ! -iname '*nowifi*' -exec sed -i 's/ipq\(6018\|8074\).dtsi/ipq\1-nowifi.dtsi/g' {} +

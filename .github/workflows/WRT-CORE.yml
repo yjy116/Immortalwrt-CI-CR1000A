@@ -106,8 +106,7 @@ jobs:
           sudo -E apt -yqq autoremove --purge
           sudo -E apt -yqq autoclean
           sudo -E apt -yqq clean
-          sudo -E apt -yqq install dos2unix libfuse-dev clang llvm npm
-          sudo -E npm install -g pnpm
+          sudo -E apt -yqq install dos2unix libfuse-dev clang llvm
           sudo bash -c 'bash <(curl -sL https://build-scripts.immortalwrt.org/init_build_environment.sh)'
           sudo -E systemctl daemon-reload
           sudo -E timedatectl set-timezone "Asia/Shanghai"
@@ -186,7 +185,7 @@ jobs:
 
       - name: Custom Packages
         run: |
-          cd ./wrt/package/
+          cd ./wrt/
 
           $GITHUB_WORKSPACE/Scripts/Packages.sh
           $GITHUB_WORKSPACE/Scripts/Handles.sh
@@ -198,12 +197,16 @@ jobs:
           if [[ "${WRT_CONFIG,,}" == *"test"* ]]; then
             cat $GITHUB_WORKSPACE/Config/$WRT_CONFIG.txt >> .config
           else
-            cat $GITHUB_WORKSPACE/Config/$WRT_CONFIG.txt $GITHUB_WORKSPACE/Config/GENERAL.txt >> .config
+            cat $GITHUB_WORKSPACE/Config/$WRT_CONFIG.txt $GITHUB_WORKSPACE/Config/GENERAL.txt $GITHUB_WORKSPACE/Config/EXTRA.txt >> .config
           fi
 
           $GITHUB_WORKSPACE/Scripts/Settings.sh
 
           make defconfig -j$(nproc) && make clean -j$(nproc)
+          if ! grep -qx 'CONFIG_PACKAGE_cr1000a-support=y' .config; then
+            echo "::error::The selected source did not enable native CR1000A support."
+            exit 1
+          fi
           echo "BPF/LLVM configuration after defconfig:"
           grep -E 'CONFIG_(BPF_TOOLCHAIN|USE_LLVM|HAS_BPF|NEED_BPF)' .config || true
           command -v clang
@@ -230,33 +233,7 @@ jobs:
         if: env.WRT_TEST != 'true'
         run: |
           cd ./wrt/
-          
-          # 用户空间增加emmc解密脚本及rtl9303控制程序
-          git clone --depth=1 https://github.com/yjy116/files
-          
-          # 赋予 files 目录下所有文件可执行权限
-          chmod -R +x files
 
-          for FILE in \
-            files/etc/rc.local \
-            files/lib/aqr/aq-fw-download \
-            files/lib/aqr/aqr-v5.6.7.cld \
-            files/lib/aqr/init.sh \
-            files/lib/mmc/data_key \
-            files/lib/mmc/init.sh \
-            files/lib/rtl/init.sh \
-            files/lib/rtl/usrApp \
-            files/sbin/exec-dir \
-            files/usr/share/switch/10-rtl9303-link
-          do
-            if [ ! -s "$FILE" ]; then
-              echo "::error::Missing required CR1000A overlay file: $FILE"
-              exit 1
-            fi
-          done
-
-          echo "CR1000A reference overlay files verified."
-          
           make download -j$(nproc)
 
       - name: Compile Firmware
@@ -293,6 +270,7 @@ jobs:
           cd ./wrt/ && mkdir ./upload/
 
           cp -f ./.config ./upload/Config-"$WRT_CONFIG"-"$WRT_INFO"-"$WRT_BRANCH"-"$WRT_DATE".txt
+          cp package/openwrt-daede/ci/DAEDE-SOURCE.txt ./upload/
 
           if [[ $WRT_TEST != 'true' ]]; then
             echo "WRT_KVER=$(find ./bin/targets/ -type f -name "*.manifest" -exec grep -oP '^kernel - \K[\d\.]+' {} \;)" >> $GITHUB_ENV

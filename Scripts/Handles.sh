@@ -1,121 +1,78 @@
 #!/bin/bash
 # SPDX-License-Identifier: MIT
 # Copyright (C) 2026 VIKINGYFY
+set -e
 
-PKG_PATH="$GITHUB_WORKSPACE/wrt/package/"
-
-#预置HomeProxy数据
-if [ -d *"homeproxy"* ]; then
-	echo " "
-
-	HP_RULE="surge"
-	HP_PATH="homeproxy/root/etc/homeproxy"
-
-	rm -rf ./$HP_PATH/resources/*
-
-	git clone -q --depth=1 --single-branch --branch "release" "https://github.com/Loyalsoldier/surge-rules.git" ./$HP_RULE/
-	cd ./$HP_RULE/ && RES_VER=$(git log -1 --pretty=format:'%s' | grep -o "[0-9]*")
-
-	echo $RES_VER | tee china_ip4.ver china_ip6.ver china_list.ver gfw_list.ver
-	awk -F, '/^IP-CIDR,/{print $2 > "china_ip4.txt"} /^IP-CIDR6,/{print $2 > "china_ip6.txt"}' cncidr.txt
-	sed 's/^\.//g' direct.txt > china_list.txt ; sed 's/^\.//g' gfw.txt > gfw_list.txt
-	mv -f ./{china_*,gfw_list}.{ver,txt} ../$HP_PATH/resources/
-
-	cd .. && rm -rf ./$HP_RULE/
-
-	cd $PKG_PATH && echo "homeproxy date has been updated!"
-fi
+FEEDS_PATH="./feeds"
+PACKAGE_PATH="./package"
 
 #修改argon主题字体和颜色
-if [ -d *"luci-theme-argon"* ]; then
-	echo " " && cd ./luci-theme-argon/
-
-	sed -i "s/primary '.*'/primary '#31a1a1'/; s/'0.2'/'0.5'/; s/'none'/'bing'/; s/'600'/'normal'/" ./luci-app-argon-config/root/etc/config/argon
-
-	cd $PKG_PATH && echo "theme-argon has been fixed!"
+if [ -d "$PACKAGE_PATH/luci-theme-argon" ]; then
+	echo " "
+	if sed -i "s/primary '.*'/primary '#31a1a1'/g; s/'0.2'/'0.5'/g; s/'none'/'bing'/g; s/'600'/'normal'/g" \
+		"$PACKAGE_PATH/luci-theme-argon/luci-app-argon-config/root/etc/config/argon"; then
+		echo "theme-argon has been fixed!"
+	else
+		echo "::error::theme-argon fix failed!"
+		exit 1
+	fi
 fi
 
 #修改aurora菜单式样
-if [ -d *"luci-app-aurora-config"* ]; then
-	echo " " && cd ./luci-app-aurora-config/
-
-	sed -i "s/nav_submenu_type '.*'/nav_submenu_type 'boxed-dropdown'/g" $(find ./root/usr/share/aurora/ -type f -name "*.template")
-
-	cd $PKG_PATH && echo "theme-aurora has been fixed!"
+if [ -d "$PACKAGE_PATH/luci-app-aurora-config" ]; then
+	echo " "
+	if find "$PACKAGE_PATH/luci-app-aurora-config/root/usr/share/aurora/" -type f -name '*.template' -exec \
+		sed -i "s/nav_type '.*'/nav_type 'dropdown'/g; s/struct_radius_base '.*'/struct_radius_base '0.125rem'/g" {} +; then
+		echo "theme-aurora has been fixed!"
+	else
+		echo "::error::theme-aurora fix failed!"
+		exit 1
+	fi
 fi
 
 #修改mini-diskmanager菜单位置
-if [ -d *"luci-app-mini-diskmanager"* ]; then
-	echo " " && cd ./luci-app-mini-diskmanager/
-
-	sed -i "s/services/system/g" ./luci-app-mini-diskmanager/root/usr/share/luci/menu.d/luci-app-mini-diskmanager.json
-
-	cd $PKG_PATH && echo "mini-diskmanager has been fixed!"
-fi
-
-# Fix luci-app-iperf3 include path when imported as a standalone package
-IPERF3_FILE="./luci-app-iperf3/Makefile"
-if [ -f "$IPERF3_FILE" ]; then
+if [ -d "$PACKAGE_PATH/luci-app-mini-diskmanager" ]; then
 	echo " "
-
-	sed -i 's#include ../../luci.mk#include $(TOPDIR)/feeds/luci/luci.mk#g' "$IPERF3_FILE"
-
-	cd $PKG_PATH && echo "luci-app-iperf3 has been fixed!"
-fi
-
-# Fix CR1000A LAN probe with the RTL9303 userspace switch helper
-CR1000A_DTS="../target/linux/qualcommax/dts/ipq8072-cr1000a.dts"
-if [ -f "$CR1000A_DTS" ]; then
-	echo " "
-
-	perl -0pi -e 's/((?:[A-Za-z0-9_]+:)?port\@5)\s*\{.*?\n\s*\};/$1 {\n\t\t\tport_id = <5>;\n\t\t\tphy_address = <0x4>;\n\t\t\tforced-speed = <10000>;\n\t\t\tforced-duplex = <1>;\n\t\t};/s or die "failed to patch CR1000A rtl9303 port force mode\n";' "$CR1000A_DTS"
-	perl -0pi -e 'my $replacement = qq{&dp5_syn {\n\tstatus = "okay";\n\tphy-mode = "usxgmii";\n\tqcom,no-phy;\n\tqcom,forced-speed = <10000>;\n\tqcom,forced-duplex = <1>;\n\tlabel = "lan";\n};}; s/&dp5_syn\s*\{.*?\n\};\s*\n\s*&dp6_syn/$replacement\n\n&dp6_syn/s or die "failed to patch CR1000A dp5_syn\n";' "$CR1000A_DTS"
-	grep -q "forced-speed = <10000>" "$CR1000A_DTS"
-	grep -q "qcom,no-phy" "$CR1000A_DTS"
-
-	cd $PKG_PATH && echo "cr1000a lan dts has been fixed!"
-else
-	echo "::error::Missing CR1000A DTS: $CR1000A_DTS"
-	exit 1
-fi
-
-# Add CR1000A no-phy support after upstream's restored of_phy_connect patch
-NSS_DP_PATCH_DIR=""
-for patch_dir in "./qca-nss/qca-nss-dp/patches" "./kernel/qca-nss-dp/patches"; do
-	if [ -d "$patch_dir" ]; then
-		NSS_DP_PATCH_DIR="$patch_dir"
-		break
+	if sed -i "s/services/system/g" \
+		"$PACKAGE_PATH/luci-app-mini-diskmanager/luci-app-mini-diskmanager/root/usr/share/luci/menu.d/luci-app-mini-diskmanager.json"; then
+		echo "mini-diskmanager has been fixed!"
+	else
+		echo "::error::mini-diskmanager fix failed!"
+		exit 1
 	fi
-done
-
-if [ -n "$NSS_DP_PATCH_DIR" ]; then
-	echo " "
-
-	cp -f "$GITHUB_WORKSPACE/Patches/qca-nss-dp/08-cr1000a-no-phy-link.patch" "$NSS_DP_PATCH_DIR/08-cr1000a-no-phy-link.patch"
-	grep -q "qcom,no-phy" "$NSS_DP_PATCH_DIR/08-cr1000a-no-phy-link.patch"
-
-	cd $PKG_PATH && echo "qca-nss-dp cr1000a no-phy patch has been added to $NSS_DP_PATCH_DIR!"
-else
-	echo "::error::Missing qca-nss-dp patch directory"
-	exit 1
 fi
 
-#修复TailScale配置文件冲突
-TS_FILE=$(find ../feeds/packages/ -maxdepth 3 -type f -wholename "*/tailscale/Makefile")
-if [ -f "$TS_FILE" ]; then
+#修改natmapt菜单位置
+if [ -d "$PACKAGE_PATH/luci-app-natmapt" ]; then
 	echo " "
-
-	sed -i '/\/files/d' $TS_FILE
-
-	cd $PKG_PATH && echo "tailscale has been fixed!"
+	if sed -i "s/network/services/g" \
+		"$PACKAGE_PATH/luci-app-natmapt/root/usr/share/luci/menu.d/luci-app-natmap.json"; then
+		echo "natmapt has been fixed!"
+	else
+		echo "::error::natmapt fix failed!"
+		exit 1
+	fi
 fi
 
 #修复Rust编译失败
-RUST_FILE=$(find ../feeds/packages/ -maxdepth 3 -type f -wholename "*/rust/Makefile")
-if [ -f "$RUST_FILE" ]; then
+if [ -d "$FEEDS_PATH/packages/lang/rust" ]; then
 	echo " "
+	if sed -i 's/ci-llvm=true/ci-llvm=false/g' \
+		"$FEEDS_PATH/packages/lang/rust/Makefile"; then
+		echo "rust has been fixed!"
+	else
+		echo "::error::rust fix failed!"
+		exit 1
+	fi
+fi
 
-	sed -i 's/ci-llvm=true/ci-llvm=false/g' $RUST_FILE
+# Integration required by the additional AX6600 plugins.
+MIHOMO_ALPHA="$PACKAGE_PATH/OpenWrt-nikki/mihomo-alpha/Makefile"
+if [ -f "$MIHOMO_ALPHA" ]; then
+	sed -i '/^[[:space:]]*CONFLICTS:=mihomo-meta[[:space:]]*$/d' "$MIHOMO_ALPHA"
+fi
 
-	cd $PKG_PATH && echo "rust has been fixed!"
+TS_FILE="$FEEDS_PATH/packages/net/tailscale/Makefile"
+if [ -f "$TS_FILE" ]; then
+	sed -i '/\/files/d' "$TS_FILE"
 fi

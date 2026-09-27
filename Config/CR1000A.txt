@@ -1,5 +1,6 @@
-#Verizon
+# VIKINGYFY IPQ807X-WIFI-YES profile, restricted to Verizon CR1000A.
 CONFIG_TARGET_qualcommax=y
 CONFIG_TARGET_qualcommax_ipq807x=y
-#设备列表
 CONFIG_TARGET_DEVICE_qualcommax_ipq807x_DEVICE_verizon_cr1000a=y
+# Required native package is not yet selected by the upstream device profile.
+CONFIG_PACKAGE_cr1000a-support=y

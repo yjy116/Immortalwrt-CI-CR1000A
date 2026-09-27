@@ -1,92 +1,82 @@
-# OpenWRT-CI
-云编译CR1000A OpenWRT固件
-- 源码：
-[yjy116/immortalwrt](https://github.com/yjy116/immortalwrt.git)
-[tsg2k2/openwrt](https://github.com/tsg2k2/openwrt)
+# CR1000A OpenWrt CI
 
-# 硬件配置：
+为 Verizon CR1000A 编译 ImmortalWrt，源码使用 [yjy116/immortalwrt](https://github.com/yjy116/immortalwrt)，跟随 [VIKINGYFY/immortalwrt](https://github.com/VIKINGYFY/immortalwrt)。
 
-- CPU: IPQ8072A
-- RAM: 2GB
-- EMMC: 4GB
-- 10G-WAN: AQC113C（USXGMII/dp6_syn)
-- Switch Chip: RTL9303(USXGMII/dp5_syn)
-- 10G-LAN: AQC113C(port8)
-- 2.5G-LAN: RTL8221B*2（port20/port24）
-- 2.5G-MOCA: MXL3711(port25)
-- Radio 1: QCN5054
-- Radio 2: QCN5024 (4x4 5G 4800Mbps)
-- Radio 3: QCN9024 (4x4 6G 4800Mbps)
+## 配置来源
 
-# 固件简要说明：
+本轮核对基线：
 
-- 这货的固件太少了，原版的OP用不习惯，把A佬的固件搬到了imm上，请V佬纳入支持，有时间就捣鼓几下，目前是勉强能用
-- 10g WAN口识别正常,我只有2.5g,具体速率能跑到多少，我不知道
-- 三频无线正常，国家选择US，能有30dB
-- NSS 硬件加速正常
-- 带HP、Mosdns等简单几个软件自己够用了，具体的自己看config，想自己加就改这里
+| 用途 | 仓库与提交 |
+| --- | --- |
+| 编译模板 | [VIKINGYFY/OpenWRT-CI · 48bf00d](https://github.com/VIKINGYFY/OpenWRT-CI/tree/48bf00d0194c7d5164bed5bb41de398cfcaf5851) |
+| 固件源码 | [VIKINGYFY/immortalwrt · 6979f3c](https://github.com/VIKINGYFY/immortalwrt/commit/6979f3c67ae803b0fe4fcb7fce0dd1edd3755695)，Linux 6.18.52 |
+| 补充插件 | [Immortalwrt-CI-JDC-AX6600 · 7cedfb8](https://github.com/yjy116/Immortalwrt-CI-JDC-AX6600/tree/7cedfb8b79528d461075bdbd8ac0a7eff7e0be5e) |
 
-# 固件问题：
+- `Config/GENERAL.txt`：完整采用上游模板的通用配置。
+- `Config/CR1000A.txt`：从上游 IPQ807X-WIFI-YES 配置中只选 CR1000A，并显式启用上游 `cr1000a-support`。
+- `Config/EXTRA.txt`：AX6600 已启用、模板未启用的通用插件及所需依赖。以后增减这些插件优先修改此文件。
+- 配置合并顺序：设备配置、GENERAL、EXTRA、Settings 中的 PRIVATE 和手动 PACKAGE；私有配置与手动参数仍可覆盖普通插件选项。
+- `Scripts/Packages.sh`、`Handles.sh`、`Settings.sh` 使用上游模板结构，补入插件源和必要的插件兼容处理；处理失败会明确报错。
+- 默认主题与模板一致，使用 Aurora。保留本项目的设备名称、网络默认值、Auto-Build 原有调度、预热缓存和手动缓存清理。不恢复 `apt full-upgrade`。
 
-- 9024用的默认驱动，降频5.2g或者5.8G使用，如果想使用6E自己换一下驱动
-- 10gLAN和2.5glan都能用,这三个lan口是通过/lib/rtl/usrApp进行控制，rtl的命令自己找
-- 首次开机rtl9303会记住每个lan口的mac，如果mac发生变化，需要通过/lib/rtl/usrApp进行重新绑定
-- data分区通过解密，挂载以后可以使用
-- 上述增加的RTL控制APP和data分区的脚本在files文件夹，内容自己看
+## 硬件支持
 
-# 目录简要说明：
+LAN、WAN、无线和 NSS 使用上游设备树、驱动及初始化服务，不再注入本地 no-PHY 补丁、强制链路、LAN 转发表或 VLAN 初始化逻辑，也不再克隆 `yjy116/files`。
 
-workflows——自定义CI配置
+上游在 `e5c7d22` 新增 `cr1000a-support`，但本轮检查的设备默认包列表及 2026-09-27 Release 未选择该包，因此这里显式启用。其依赖自动带入 `cryptsetup`、`kmod-spi-dev`、`KERNEL_DEVMEM` 等，使用上游 procd 服务启动 RTL9303、Aquantia 和 eMMC 辅助程序。配置阶段会检查它是否真的启用。
 
-Scripts——自定义脚本
+第三射频继续采用上游 QCN9074 固件路径和 CR1000A 板级数据。编译成功不等于原生 6GHz、全部 LAN 口或实际吞吐已通过验证。
 
-Config——自定义配置
+**从旧固件迁移时注意：** 先备份设置。若保留配置刷机，请检查 `/etc/rc.local`，移除旧的 `/lib/rtl/init.sh`、`/lib/aqr/init.sh`、`/lib/mmc/init.sh` 调用以及旧 `exec-dir`/switch 启动调用，保留其他自定义命令，避免与新服务重复启动。不要把旧版硬件 overlay 再恢复进新固件。这里不自动删除路由器上的用户配置。
 
-# 2026-09 上游适配
+## 插件补充
 
-源码继续使用 `yjy116/immortalwrt` 的 `main` 分支。本轮核对的上游基线为
-[VIKINGYFY/immortalwrt 90448ee](https://github.com/VIKINGYFY/immortalwrt/commit/90448eeb2b8f5d172caedfe6d96ab3bacb058c09)，内核为 6.18.44。
+在模板的 HomeProxy、GecoosAC、Mini DiskManager、NATMapT、Samba、UPnP、WOLUltra 等基础上，增加：
 
-- 使用上游新增的 CR1000A 专用 QCN9074 板级文件、无线固件和 board-id 修复；QCN9024 第三射频使用 QCN9074 驱动路径。
-- 纳入上游 NSS/EDMA 启动、DMA、NAPI/GRO 和 NSS 频率设置更新。
-- 保留 `Patches/qca-nss-dp/08-cr1000a-no-phy-link.patch`、LAN 强制链路设置及 `yjy116/files` 中的 RTL9303/AQR 初始化脚本。
-- 无线配置仅定制 SSID 和密码，保留上游国家码、加密表达式；实际国家码仍应按使用地区设置。
-- HomeProxy 与 sing-box 继续使用官方 feed 配套版本，现有插件选择和定时编译逻辑保持不变。
+- 代理：DAE、DAED、统一 `luci-app-daede`、Nikki、Passwall、OpenClash。
+- 联网与服务：AdGuardHome、EasyTier、Tailscale、ZeroTier、WireGuard、SQM/NSS、DDNS-Go、Lucky、USB 打印、VLMCSD、SoftEther VPN。
+- 工具：qBittorrent、TTYD、CPUFreq、Statistics、VnStat2、Btop、Tcpdump，以及参考仓库的通用存储/诊断工具。
+- GeoData 更新器：保留参考项目的功能和每周更新时间，数据包仍使用上游 feed，不重复定义；下载及 SHA256 校验失败返回非零，不替换旧数据，不使用第三方下载代理。
 
-补丁和配置检查不能替代刷机测试。本轮更新后的所有 LAN 口、第三射频及原生 6GHz 仍需实机验证。
+HomeProxy/sing-box 按模板从 `VIKINGYFY/packages` 配套获取，不再保留旧的“官方 feed 专供”处理，不单独强升 sing-box。
 
-# GitHub Actions Cache 清理说明
+DAE/DAED 使用参考项目的 `kenzok8/openwrt-daede@0b0e5d6`，包括后端切换互斥、旧订阅任务迁移和错误上报修复。使用内核 BTF，不额外携带大型 `vmlinux-btf`；准确源码信息随 Release 的 `DAEDE-SOURCE.txt` 发布。迁移保留旧数据库/配置和订阅计划；自动更新凭据需在新界面中核对。
 
-`CR1000A` 和 `CR1000A-TEST` 使用同一套缓存规则：按源码仓库、分支、平台、构建工具/内核源码、编译配置和构建主机生成兼容性指纹。
-这些内容变化时会自动使用新缓存，不再匹配旧的宽泛缓存键；无需因为普通升级先手动清空全部缓存。
+不引入 AX6600 的 Athena LED、内存/设备配置及其他硬件补丁；不恢复 netspeedtest 源，也不启用 MosDNS、speedtestcpp 或旧 luci-app-speedtest。测速采用模板的命令行 iperf3，不保留旧的独立 luci-app-iperf3。
 
-没有兼容缓存时，会在编译固件前预热 `tools` 和 `toolchain`，预热成功立即保存，完整编译成功后再保存完整缓存。
-缓存仅包含 `.ccache`、`staging_dir/host` 和交叉工具链；跟随 feeds 变化的 `hostpkg` 重新构建。
-本轮首次编译会重新预热，之后兼容的编译可恢复缓存。保留 `actions/cache@v5` 和手动一键清理，不增加自动缓存删除任务。
+新增插件会增加固件大小和编译耗时。最终镜像大小、设备分区容量和实际可用空间仍需在构建及刷机前核对，不能用 eMMC 总容量代替固件分区容量。
 
-GitHub Actions 会自动删除超过 7 天未访问的 cache。平时不需要定期清理，缓存能加速工具链和 host 目录恢复。
+## 构建和缓存
 
-遇到下面情况时，可以手动一键清空 cache：
+手动运行 Actions 中的 `CR1000A` 或 `CR1000A-test`。将 `TEST` 设为 true 时仅生成配置，不编译固件。原有 Auto-Build 调度保持不变。
 
-- 上游源码、内核、NSS、工具链或重要包源有较大变更。
-- 编译反复失败，怀疑旧 `staging_dir`、`toolchain`、`.ccache` 污染。
-- 修改了缓存路径、缓存 key 或预热逻辑。
-- 想让下一次编译从干净状态重新预热。
+两种构建共用兼容性缓存规则：源码仓库/分支、平台、构建工具/内核源码、GENERAL/EXTRA/设备配置和构建主机共同生成指纹。相关变化自动使用新缓存，不匹配旧的宽泛缓存键。
 
-清理方式：
+没有兼容缓存时，先预热 `tools` 和 `toolchain`，成功后立即保存；完整编译成功后再保存完整缓存。仅缓存 `.ccache`、`staging_dir/host` 和交叉工具链，feeds 的 `hostpkg` 重新构建。继续使用 `actions/cache@v5`。
 
-1. 打开仓库 `Actions` 页面。
-2. 选择 `Cache-Clean`。
-3. 点击 `Run workflow`。
+怀疑缓存污染、重要源码变更后反复失败，或希望完整重新预热时：
 
-这个 workflow 会清空本仓库的全部 GitHub Actions cache，不会删除 Release、固件文件、源码文件或 workflow 运行记录。清理后第一次编译会变慢，因为需要重新预热和保存缓存；后续再次编译会恢复加速。
+1. 打开 Actions，选择 `Cache-Clean`。
+2. 点击 `Run workflow`。
 
-# 本地适配检查
+这会清空本仓库 Actions cache，不删除 Release、固件、源码或运行记录。首次重建较慢；无需另设周期性缓存清理。
 
-在 Bash 和 Python 3 环境中，指定已检出的上游源码目录运行：
+## 本地验证
+
+需要 Bash、Python 3 和 Node.js。准备上述固定版本的源码、CI 模板及 AX6600 参考仓库：
 
 ```sh
-WRT_SOURCE_CHECK=/path/to/immortalwrt python3 Tests/test_compatibility.py -v
+export WRT_SOURCE_CHECK=/path/to/immortalwrt
+export WRT_CI_TEMPLATE=/path/to/VIKINGYFY-OpenWRT-CI
+export WRT_PLUGIN_REFERENCE=/path/to/AX6600-CI
+python3 -m unittest discover -s Tests -v
+export GITHUB_WORKSPACE="$PWD"
+bash Scripts/Daede.sh /tmp/cr1000a-daede-check
+bash Tests/test_daede_migration.sh
+bash Tests/test_daede_service_guard.sh /tmp/cr1000a-daede-check
+node Tests/test_daede_switch.cjs /tmp/cr1000a-daede-check
+bash Tests/test_mihomo_conflicts.sh
+bash Tests/test_geodata_updater.sh
 ```
 
-检查真实设备树变换、第三射频板级数据、无线设置表达式及缓存兼容性；固件编译仍由 GitHub Actions 验证。
+检查覆盖模板/插件差集、原生硬件文件不被改写、第三射频板级数据、无线表达式、缓存变更，以及 DAE/DAED 迁移和切换。服务测试只替代路由器专有 I/O，不代表实机运行；完整固件仍由 GitHub Actions 验证。

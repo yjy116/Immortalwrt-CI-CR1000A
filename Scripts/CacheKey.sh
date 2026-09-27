@@ -13,7 +13,7 @@ git cat-file -e "HEAD:target/linux/$WRT_TARGET"
 COMPAT_HASH=$({
 	git ls-tree HEAD -- Makefile rules.mk config include scripts tools toolchain \
 		target/linux/generic "target/linux/$WRT_TARGET" || exit 1
-	for FILE in "Config/$WRT_CONFIG.txt" Config/GENERAL.txt Scripts/Settings.sh Scripts/CacheKey.sh; do
+	for FILE in "Config/$WRT_CONFIG.txt" Config/GENERAL.txt Config/EXTRA.txt Scripts/Settings.sh Scripts/CacheKey.sh; do
 		printf '%s\n' "$FILE"
 		sha256sum < "$GITHUB_WORKSPACE/$FILE" || exit 1
 	done

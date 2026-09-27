@@ -51,26 +51,24 @@ class WirelessSettingsTests(unittest.TestCase):
 
 
 class LanCompatibilityTests(unittest.TestCase):
-    def test_real_handle_script_preserves_wan_and_forces_lan(self):
+    def test_real_handle_script_leaves_native_hardware_unchanged(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             package = root / "wrt/package"
             (package / "qca-nss/qca-nss-dp/patches").mkdir(parents=True)
             (root / "wrt/feeds/packages").mkdir(parents=True)
             copy_file(SOURCE / DTS_FILE, root / "wrt" / DTS_FILE)
-            patch = Path("Patches/qca-nss-dp/08-cr1000a-no-phy-link.patch")
-            copy_file(REPO / patch, root / patch)
-            run_bash(f'bash "{REPO.as_posix()}/Scripts/Handles.sh"', package,
+            support = Path("package/emortal/cr1000a-support")
+            shutil.copytree(SOURCE / support, root / "wrt" / support)
+            run_bash(f'bash "{REPO.as_posix()}/Scripts/Handles.sh"', root / "wrt",
                      {"GITHUB_WORKSPACE": root.as_posix()})
-            result = (root / "wrt" / DTS_FILE).read_text(encoding="utf-8")
-            lan = result.split("&dp5_syn {", 1)[1].split("};", 1)[0]
-            wan = result.split("&dp6_syn {", 1)[1].split("};", 1)[0]
-            self.assertIn("qcom,no-phy;", lan)
-            self.assertIn("qcom,forced-speed = <10000>;", lan)
-            self.assertNotIn("phy-handle", lan)
-            self.assertIn("phy-handle = <&aqr113c>;", wan)
-            installed = package / "qca-nss/qca-nss-dp/patches" / patch.name
-            self.assertEqual((REPO / patch).read_bytes(), installed.read_bytes())
+            self.assertEqual((SOURCE / DTS_FILE).read_bytes(),
+                             (root / "wrt" / DTS_FILE).read_bytes())
+            for original in (SOURCE / support).rglob("*"):
+                if original.is_file():
+                    actual = root / "wrt" / support / original.relative_to(SOURCE / support)
+                    self.assertEqual(original.read_bytes(), actual.read_bytes())
+            self.assertEqual([], list((package / "qca-nss/qca-nss-dp/patches").iterdir()))
 
 
 def board_elements(data, offset):
@@ -104,7 +102,8 @@ class CacheCompatibilityTests(unittest.TestCase):
         self.directory = tempfile.TemporaryDirectory()
         self.addCleanup(self.directory.cleanup)
         self.workspace = Path(self.directory.name)
-        for name in ("Config/CR1000A.txt", "Config/GENERAL.txt", "Scripts/Settings.sh", "Scripts/CacheKey.sh"):
+        for name in ("Config/CR1000A.txt", "Config/GENERAL.txt", "Config/EXTRA.txt",
+                     "Scripts/Settings.sh", "Scripts/CacheKey.sh"):
             copy_file(REPO / name, self.workspace / name)
 
     def prefix(self, **changes):
@@ -140,6 +139,13 @@ class CacheCompatibilityTests(unittest.TestCase):
         (self.workspace / "Config/GENERAL.txt").unlink()
         with self.assertRaises(subprocess.CalledProcessError):
             self.prefix()
+
+    def test_plugin_config_changes_invalidate_cache(self):
+        baseline = self.prefix()
+        path = self.workspace / "Config/EXTRA.txt"
+        path.write_text(path.read_text(encoding="utf-8") + "\nCONFIG_KERNEL_DEBUG_INFO_BTF=n\n",
+                        encoding="utf-8")
+        self.assertNotEqual(baseline, self.prefix())
 
 
 if __name__ == "__main__":
