@@ -102,13 +102,14 @@ class CacheCompatibilityTests(unittest.TestCase):
         self.directory = tempfile.TemporaryDirectory()
         self.addCleanup(self.directory.cleanup)
         self.workspace = Path(self.directory.name)
-        for name in ("Config/CR1000A.txt", "Config/GENERAL.txt", "Config/EXTRA.txt",
+        for name in ("Config/CR1000A-WIFI-YES.txt", "Config/CR1000A-WIFI-NO.txt",
+                     "Config/GENERAL.txt", "Config/EXTRA.txt",
                      "Scripts/Settings.sh", "Scripts/CacheKey.sh"):
             copy_file(REPO / name, self.workspace / name)
 
     def prefix(self, **changes):
         variables = {
-            "GITHUB_WORKSPACE": self.workspace.as_posix(), "WRT_CONFIG": "CR1000A",
+            "GITHUB_WORKSPACE": self.workspace.as_posix(), "WRT_CONFIG": "CR1000A-WIFI-YES",
             "WRT_SOURCE": "yjy116/immortalwrt", "WRT_BRANCH": "main",
             "WRT_TARGET": "qualcommax", "WRT_SUBTARGET": "ipq807x",
             "WRT_HOST_ID": "ubuntu-24.04", "RUNNER_ARCH": "X64", "WRT_PACKAGE": "",
@@ -118,6 +119,9 @@ class CacheCompatibilityTests(unittest.TestCase):
 
     def test_identical_inputs_share_cache(self):
         self.assertEqual(self.prefix(), self.prefix())
+
+    def test_wifi_modes_do_not_share_cache(self):
+        self.assertNotEqual(self.prefix(), self.prefix(WRT_CONFIG="CR1000A-WIFI-NO"))
 
     def test_source_and_branch_do_not_share_cache(self):
         baseline = self.prefix()

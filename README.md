@@ -13,7 +13,7 @@
 | 补充插件 | [Immortalwrt-CI-JDC-AX6600 · 7cedfb8](https://github.com/yjy116/Immortalwrt-CI-JDC-AX6600/tree/7cedfb8b79528d461075bdbd8ac0a7eff7e0be5e) |
 
 - `Config/GENERAL.txt`：完整采用上游模板的通用配置。
-- `Config/CR1000A.txt`：从上游 IPQ807X-WIFI-YES 配置中只选 CR1000A，并显式启用上游 `cr1000a-support`。
+- `Config/CR1000A-WIFI-YES.txt`、`Config/CR1000A-WIFI-NO.txt`：分别采用上游 IPQ807X 的有无线/无无线配置，只选 CR1000A，均显式启用上游 `cr1000a-support`。
 - `Config/EXTRA.txt`：AX6600 已启用、模板未启用的通用插件及所需依赖。以后增减这些插件优先修改此文件。
 - 配置合并顺序：设备配置、GENERAL、EXTRA、Settings 中的 PRIVATE 和手动 PACKAGE；私有配置与手动参数仍可覆盖普通插件选项。
 - `Scripts/Packages.sh`、`Handles.sh`、`Settings.sh` 使用上游模板结构，补入插件源和必要的插件兼容处理；处理失败会明确报错。
@@ -25,7 +25,7 @@ LAN、WAN、无线和 NSS 使用上游设备树、驱动及初始化服务，不
 
 上游在 `e5c7d22` 新增 `cr1000a-support`，但本轮检查的设备默认包列表及 2026-09-27 Release 未选择该包，因此这里显式启用。其依赖自动带入 `cryptsetup`、`kmod-spi-dev`、`KERNEL_DEVMEM` 等，使用上游 procd 服务启动 RTL9303、Aquantia 和 eMMC 辅助程序。配置阶段会检查它是否真的启用。
 
-第三射频继续采用上游 QCN9074 固件路径和 CR1000A 板级数据。编译成功不等于原生 6GHz、全部 LAN 口或实际吞吐已通过验证。
+WiFi-YES 的第三射频继续采用上游 QCN9074 固件路径和 CR1000A 板级数据。WiFi-NO 按上游配置禁用 ath11k AHB/PCIe 驱动及 IPQ8074/QCN9074 无线固件，并使用 `ipq8074-nowifi.dtsi` 调整 Q6 预留内存，不提供板载 WiFi。两种模式均保留原生 LAN/WAN 支持。编译成功不等于原生 6GHz、全部 LAN 口或实际吞吐已通过验证。
 
 **从旧固件迁移时注意：** 先备份设置。若保留配置刷机，请检查 `/etc/rc.local`，移除旧的 `/lib/rtl/init.sh`、`/lib/aqr/init.sh`、`/lib/mmc/init.sh` 调用以及旧 `exec-dir`/switch 启动调用，保留其他自定义命令，避免与新服务重复启动。不要把旧版硬件 overlay 再恢复进新固件。这里不自动删除路由器上的用户配置。
 
@@ -48,9 +48,11 @@ DAE/DAED 使用参考项目的 `kenzok8/openwrt-daede@0b0e5d6`，包括后端切
 
 ## 构建和缓存
 
-手动运行 Actions 中的 `CR1000A` 或 `CR1000A-test`。将 `TEST` 设为 true 时仅生成配置，不编译固件。原有 Auto-Build 调度保持不变。
+手动运行 Actions 中的 `CR1000A` 或 `CR1000A-test`，**一次触发同时启动 WiFi-YES 和 WiFi-NO 两个并行任务**，不需要分别选择或触发。两种模式共用 GENERAL/EXTRA 插件清单，分别生成独立 Release，标签以 `CR1000A-WIFI-YES-` / `CR1000A-WIFI-NO-` 开头，固件文件名包含 `wifi-yes` / `wifi-no`。某个任务失败不会自动取消另一个任务。
 
-两种构建共用兼容性缓存规则：源码仓库/分支、平台、构建工具/内核源码、GENERAL/EXTRA/设备配置和构建主机共同生成指纹。相关变化自动使用新缓存，不匹配旧的宽泛缓存键。
+将 `TEST` 设为 true 时仍会启动两个任务，但只生成两种配置，不编译固件。原有 Auto-Build 调度保持不变。WiFi-NO 请通过有线网络管理；不要通过手动 PACKAGE 或 PRIVATE 配置重新启用无线驱动，否则会与无无线内存布局冲突。
+
+正式和测试工作流共用兼容性缓存规则：源码仓库/分支、平台、构建工具/内核源码、GENERAL/EXTRA/设备配置和构建主机共同生成指纹。WiFi-YES 与 WiFi-NO 使用各自的兼容性指纹，不混用缓存；首次切换到新配置名称需要重新预热。相关变化自动使用新缓存，不匹配旧的宽泛缓存键。
 
 没有兼容缓存时，先预热 `tools` 和 `toolchain`，成功后立即保存；完整编译成功后再保存完整缓存。仅缓存 `.ccache`、`staging_dir/host` 和交叉工具链，feeds 的 `hostpkg` 重新构建。继续使用 `actions/cache@v5`。
 
@@ -69,6 +71,7 @@ DAE/DAED 使用参考项目的 `kenzok8/openwrt-daede@0b0e5d6`，包括后端切
 export WRT_SOURCE_CHECK=/path/to/immortalwrt
 export WRT_CI_TEMPLATE=/path/to/VIKINGYFY-OpenWRT-CI
 export WRT_PLUGIN_REFERENCE=/path/to/AX6600-CI
+python3 -m pip install -r Tests/requirements.txt
 python3 -m unittest discover -s Tests -v
 export GITHUB_WORKSPACE="$PWD"
 bash Scripts/Daede.sh /tmp/cr1000a-daede-check
@@ -79,4 +82,4 @@ bash Tests/test_mihomo_conflicts.sh
 bash Tests/test_geodata_updater.sh
 ```
 
-检查覆盖模板/插件差集、原生硬件文件不被改写、第三射频板级数据、无线表达式、缓存变更，以及 DAE/DAED 迁移和切换。服务测试只替代路由器专有 I/O，不代表实机运行；完整固件仍由 GitHub Actions 验证。
+检查覆盖双模式并行矩阵、WiFi-NO 上游禁用项和 Q6 调整、两种缓存隔离、模板/插件差集、原生 LAN/WAN 文件不被改写、第三射频板级数据、无线表达式，以及 DAE/DAED 迁移和切换。服务测试只替代路由器专有 I/O，不代表实机运行；完整固件仍由 GitHub Actions 验证。

@@ -24,10 +24,12 @@ class AlignmentTests(unittest.TestCase):
         self.assertEqual(text(TEMPLATE, "Config/GENERAL.txt"), text(REPO, "Config/GENERAL.txt"))
 
     def test_only_cr1000a_is_selected_with_native_support(self):
-        config = enabled(text(REPO, "Config/CR1000A.txt"))
-        devices = {key for key in config if key.startswith("CONFIG_TARGET_DEVICE_")}
-        self.assertEqual({"CONFIG_TARGET_DEVICE_qualcommax_ipq807x_DEVICE_verizon_cr1000a"}, devices)
-        self.assertIn("CONFIG_PACKAGE_cr1000a-support", config)
+        for mode in ("YES", "NO"):
+            with self.subTest(mode=mode):
+                config = enabled(text(REPO, f"Config/CR1000A-WIFI-{mode}.txt"))
+                devices = {key for key in config if key.startswith("CONFIG_TARGET_DEVICE_")}
+                self.assertEqual({"CONFIG_TARGET_DEVICE_qualcommax_ipq807x_DEVICE_verizon_cr1000a"}, devices)
+                self.assertIn("CONFIG_PACKAGE_cr1000a-support", config)
 
     def test_all_reference_general_apps_are_included(self):
         expected = enabled(text(REFERENCE, "Config/GENERAL.txt"))
